@@ -4,7 +4,7 @@ endif
 include $(GNUSTEP_MAKEFILES)/common.make
 APP_NAME = Prompt
 VERSION = 1.0
-Prompt_OBJC_FILES = main.m AppController.m TerminalView.m TerminalPreferences.m Terminal/TerminalParser_VT100.m
+Prompt_OBJC_FILES = main.m AppController.m TerminalView.m TerminalPreferences.m TerminalWallpaper.m Terminal/TerminalParser_VT100.m
 Prompt_CFLAGS = -std=c99
 # X11 supplies mouse state while the window manager owns the resize drag.
 ifneq ($(shell pkg-config --exists x11 && echo yes),)

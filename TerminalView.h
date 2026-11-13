@@ -17,6 +17,7 @@
 
 #import <AppKit/AppKit.h>
 #import "Terminal/TerminalParser_VT100.h"
+@class TerminalWallpaper;
 
 /** An independent interactive terminal. Screen and nonblocking PTY I/O use the
  * main run loop. */
@@ -26,9 +27,16 @@
   TerminalPosition _cursorPosition;
   NSMutableArray *_history;
   NSMutableData *_pendingInput;
+  NSUInteger _pendingInputOffset;
+  BOOL _collectingDamage;
+  NSRect _pendingDamage;
   NSString *_directory;
   NSString *_shellPath;
   NSString *_profileName;
+  TerminalWallpaper *_wallpaper;
+  double _transparency;
+  NSTimeInterval _lastWallpaperUpdate;
+  NSPoint _wallpaperPosition;
   NSFont *_font;
   NSFont *_boldFont;
   NSColor *_foregroundColor, *_backgroundColor, *_cursorColor;

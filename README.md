@@ -5,6 +5,12 @@ New windows default to 80 columns by 25 rows, with the history scroller on the l
 Preferences supports named profiles for fonts, colors, cursor behavior, history,
 bell, initial window dimensions, and automatic window closing on shell exit. Save copies, rename or delete profiles,
 choose the default for new windows, and apply profiles to individual sessions.
+Profiles also offer a Wallpaper transparency slider (off by default). On X11,
+Prompt blends the desktop's published root wallpaper with the background color,
+keeping text, selections, and explicit ANSI backgrounds opaque. The wallpaper
+stays aligned as the window moves; no compositor is required. Desktops that do
+not publish `_XROOTPMAP_ID` or `ESETROOT_PMAP_ID` use the solid background instead.
+This shows wallpaper only, not other windows behind the terminal.
 Existing settings are preserved in the built-in Default profile.
 Closing a session or quitting warns about active jobs. Profiles can disable
 this confirmation or the running-process name shown beside the directory in

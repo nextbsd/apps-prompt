@@ -508,6 +508,25 @@ NSString *TerminalPreferencesDidChangeNotification
   [self setTerminalValue:[NSNumber numberWithBool:enabled] forKey:@"showProcess"];
 }
 
+- (double)terminalTransparency
+{
+  id value = [[self terminalSettings] objectForKey:@"transparency"];
+  double amount = [value isKindOfClass:[NSNumber class]] ? [value doubleValue] : 0;
+  return isfinite (amount) && amount >= 0 && amount <= 1 ? amount : 0;
+}
+
++ (double)terminalTransparency
+{
+  return [AUTORELEASE ([[self alloc]
+      initWithProfileName:[self selectedProfileName]]) terminalTransparency];
+}
+
++ (void)setTerminalTransparency:(double)value
+{
+  if (isfinite (value) && value >= 0 && value <= 1)
+    [self setTerminalValue:[NSNumber numberWithDouble:value] forKey:@"transparency"];
+}
+
 + (void)resetTerminalPreferences
 {
   [self saveTerminalSettings:[NSDictionary dictionary]];

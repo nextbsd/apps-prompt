@@ -285,6 +285,7 @@ label (NSView *view, NSString *text, CGFloat y)
                                               pointSize]]];
   [_foreground setColor:[TerminalPreferences terminalForegroundColor]];
   [_background setColor:[TerminalPreferences terminalBackgroundColor]];
+  [_transparency setDoubleValue:[TerminalPreferences terminalTransparency]];
   [_cursor setColor:[TerminalPreferences terminalCursorColor]];
   [_shape selectItemAtIndex:[TerminalPreferences terminalCursorShape]];
   [_columns setIntegerValue:[TerminalPreferences terminalColumns]];
@@ -302,7 +303,7 @@ label (NSView *view, NSString *text, CGFloat y)
   if (!_preferences)
     {
       _preferences = [[TerminalPreferencesPanel alloc]
-          initWithContentRect:NSMakeRect (180, 180, 720, 610)
+          initWithContentRect:NSMakeRect (180, 180, 720, 680)
                     styleMask:NSTitledWindowMask | NSClosableWindowMask
                       backing:NSBackingStoreBuffered
                         defer:NO];
@@ -431,6 +432,19 @@ label (NSView *view, NSString *text, CGFloat y)
           [button setAction:@selector (changeSettings:)];
           [view addSubview:button];
         }
+      NSTextField *transparencyLabel = label (view, @"Wallpaper transparency", 640);
+      [transparencyLabel setFrame:NSMakeRect (260, 640, 230, 24)];
+      _transparency = AUTORELEASE ([[NSSlider alloc]
+          initWithFrame:NSMakeRect (490, 640, 200, 24)]);
+      [_transparency setMinValue:0];
+      [_transparency setMaxValue:1];
+      [_transparency setContinuous:YES];
+      [_transparency setTarget:self];
+      [_transparency setAction:@selector (changeTransparency:)];
+      [_transparency setToolTip:@"Left: solid background. Right: wallpaper with opaque text."];
+      [view addSubview:_transparency];
+      NSTextField *wallpaperHint = label (view, @"Requires an X11 desktop that publishes its wallpaper.", 610);
+      [wallpaperHint setFrame:NSMakeRect (260, 610, 440, 24)];
       label (view, @"Profiles", 460);
       _profiles = AUTORELEASE (
           [[NSPopUpButton alloc] initWithFrame:NSMakeRect (20, 422, 210, 28)]);
@@ -579,6 +593,11 @@ label (NSView *view, NSString *text, CGFloat y)
   [TerminalPreferences setTerminalFont:font];
   [[NSFontManager sharedFontManager] setSelectedFont:font isMultiple:NO];
   [self refreshPreferences];
+}
+
+- (void)changeTransparency:(id)sender
+{
+  [TerminalPreferences setTerminalTransparency:[_transparency doubleValue]];
 }
 
 - (void)changeColors:(id)sender

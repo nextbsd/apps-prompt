@@ -36,6 +36,7 @@
 #ifdef TERMINAL_X11_RESIZE
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/Xatom.h>
 #import <GNUstepGUI/GSDisplayServer.h>
 #endif
 #include <math.h>
@@ -44,6 +45,9 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
+#include <sys/socket.h>
+#include <fcntl.h>
+
 static NSUInteger failures, checks;
 static void
 test_assert (BOOL ok, NSString *message)
@@ -65,6 +69,7 @@ test_assert (BOOL ok, NSString *message)
 - (NSPasteboard *)pasteboard;
 - (NSPasteboard *)selectionPasteboard;
 - (void)advanceBlink;
+- (void)poll:(NSTimer *)timer;
 
 @end
 
@@ -110,6 +115,128 @@ test_assert (BOOL ok, NSString *message)
 }
 
 @end
+
+/* Count AppKit damage calls and simulate expensive parsing independently of
+ * machine speed so the run-loop fairness regression is reproducible. */
+@interface TerminalBusyTestView : TerminalView
+{
+  NSUInteger _damageCalls;
+  BOOL _slow;
+}
+
+- (NSUInteger)damageCalls;
+- (void)setSlow:(BOOL)slow;
+
+@end
+
+@implementation TerminalBusyTestView
+
+- (void)setNeedsDisplayInRect:(NSRect)rect
+{
+  _damageCalls++;
+  [super setNeedsDisplayInRect:rect];
+}
+
+- (NSUInteger)damageCalls
+{
+  return _damageCalls;
+}
+
+- (void)setSlow:(BOOL)slow
+{
+  _slow = slow;
+}
+
+- (void)consumeData:(NSData *)data
+{
+  if (_slow)
+    usleep (10000);
+  [super consumeData:data];
+}
+
+@end
+
+static void
+test_output_responsiveness (void)
+{
+  TerminalBusyTestView *view = [[TerminalBusyTestView alloc]
+      initWithFrame:NSMakeRect (0, 0, 640, 400)];
+  NSUInteger before = [view damageCalls];
+  [view consumeData:[@"hello" dataUsingEncoding:NSUTF8StringEncoding]];
+  test_assert ([view damageCalls] - before <= 2,
+               @"Output batches AppKit damage instead of invalidating every cell");
+
+  /* A regular file supplies a deterministic backlog without a producer thread
+   * or dependence on PTY buffer capacity. The view owns its descriptor. */
+  FILE *file = tmpfile ();
+  test_assert (file != NULL, @"Create output backlog fixture");
+  if (file)
+    {
+      NSMutableData *backlog = [NSMutableData dataWithLength:262144];
+      memset ([backlog mutableBytes], 'x', [backlog length]);
+      fwrite ([backlog bytes], 1, [backlog length], file);
+      fflush (file);
+      rewind (file);
+      [view setValue:[NSNumber numberWithInt:dup (fileno (file))]
+             forKey:@"_master"];
+      [view setSlow:YES];
+      NSTimeInterval start = [NSDate timeIntervalSinceReferenceDate];
+      [view poll:nil];
+      NSTimeInterval elapsed = [NSDate timeIntervalSinceReferenceDate] - start;
+      NSLog (@"Busy output poll duration: %.3f seconds", elapsed);
+      test_assert (elapsed < .15 && lseek (fileno (file), 0, SEEK_CUR) < 262144,
+                   @"Busy output yields promptly with unread bytes remaining");
+      [view stop];
+      fclose (file);
+    }
+  RELEASE (view);
+}
+
+static void
+test_partial_input_writes (void)
+{
+  int sockets[2];
+  BOOL opened = socketpair (AF_UNIX, SOCK_STREAM, 0, sockets) == 0;
+  test_assert (opened, @"Create partial input write fixture");
+  if (!opened)
+    return;
+  fcntl (sockets[0], F_SETFL, O_NONBLOCK);
+  fcntl (sockets[1], F_SETFL, O_NONBLOCK);
+  TerminalView *view = [[TerminalView alloc]
+      initWithFrame:NSMakeRect (0, 0, 640, 400)];
+  [view setValue:[NSNumber numberWithInt:sockets[0]] forKey:@"_master"];
+  NSMutableData *expected = [NSMutableData dataWithLength:1024 * 1024];
+  unsigned char *bytes = [expected mutableBytes];
+  NSUInteger i;
+  for (i = 0; i < [expected length]; i++)
+    bytes[i] = i % 251;
+  [view sendData:expected];
+  [view poll:nil];
+  NSData *suffix = [@"input appended during paste" dataUsingEncoding:NSUTF8StringEncoding];
+  [view sendData:suffix];
+  [expected appendData:suffix];
+  NSMutableData *received = [NSMutableData data];
+  for (i = 0; i < 512 && [received length] < [expected length]; i++)
+    {
+      char buffer[8192];
+      ssize_t count = read (sockets[1], buffer, sizeof (buffer));
+      if (count > 0)
+        [received appendBytes:buffer length:count];
+      [view poll:nil];
+    }
+  test_assert ([received isEqual:expected],
+               @"Partial writes preserve all queued bytes and appended input in order");
+  test_assert ([[view valueForKey:@"_pendingInput"] length] == 0,
+               @"Drained input queue releases consumed bytes");
+  [view sendData:expected];
+  [view poll:nil];
+  [view stop];
+  test_assert ([[view valueForKey:@"_pendingInput"] length] == 0
+               && [[view valueForKey:@"_pendingInputOffset"] unsignedIntegerValue] == 0,
+               @"Stopping a session resets partially written input");
+  close (sockets[1]);
+  RELEASE (view);
+}
 
 static void
 terminal_feed (TerminalView *view, NSString *text)
@@ -1033,7 +1160,12 @@ test_initial_size_and_programs (NSString *directory)
   NSMutableData *largePaste = [NSMutableData dataWithLength:1024 * 1024];
   memset ([largePaste mutableBytes], 'a', [largePaste length]);
   start = [NSDate date];
-  [view sendData:largePaste];
+  [[view pasteboard] declareTypes:[NSArray arrayWithObject:NSStringPboardType]
+                           owner:nil];
+  [[view pasteboard] setString:AUTORELEASE ([[NSString alloc]
+      initWithData:largePaste encoding:NSUTF8StringEncoding])
+                       forType:NSStringPboardType];
+  [view paste:nil];
   pump (.25);
   [view setFrameSize:NSMakeSize (780, 420)];
   test_assert (-[start timeIntervalSinceNow] < 1 &&
@@ -1165,6 +1297,99 @@ test_input_and_history (void)
 }
 
 @end
+
+static void
+test_wallpaper (void)
+{
+  [TerminalPreferences resetTerminalPreferences];
+  test_assert ([TerminalPreferences terminalTransparency] == 0,
+               @"Wallpaper transparency defaults to off");
+  [TerminalPreferences setTerminalTransparency:0.5];
+  [TerminalPreferences setTerminalTransparency:NAN];
+  [TerminalPreferences setTerminalTransparency:2];
+  test_assert ([TerminalPreferences terminalTransparency] == 0.5,
+               @"Invalid transparency values do not replace valid settings");
+  [TerminalPreferences duplicateSelectedProfileWithName:@"Wallpaper test"];
+  test_assert ([TerminalPreferences terminalTransparency] == 0.5,
+               @"Profile copies preserve wallpaper transparency");
+  [TerminalPreferences deleteSelectedProfile];
+  [TerminalPreferences selectProfile:@"Default"];
+#ifdef TERMINAL_X11_RESIZE
+  NSWindow *window = [[NSWindow alloc]
+      initWithContentRect:NSMakeRect (100, 100, 320, 180)
+      styleMask:NSTitledWindowMask backing:NSBackingStoreBuffered defer:NO];
+  [window setReleasedWhenClosed:NO];
+  TerminalView *view = [[TerminalView alloc] initWithFrame:NSMakeRect (0, 0, 320, 180)];
+  [window setContentView:view];
+  [window makeKeyAndOrderFront:nil];
+  if ([GSServerForWindow (window) respondsToSelector:@selector (xDisplayRootWindow)])
+    {
+      Display *display = XOpenDisplay (NULL);
+      Window root = DefaultRootWindow (display);
+      Atom property = XInternAtom (display, "_XROOTPMAP_ID", False);
+      Atom type; int format; unsigned long count, rest;
+      unsigned char *saved = NULL;
+      XGetWindowProperty (display, root, property, 0, 1, False, AnyPropertyType,
+                          &type, &format, &count, &rest, &saved);
+      Pixmap pixmap = XCreatePixmap (display, root, 64, 64, DefaultDepth (display, DefaultScreen (display)));
+      GC gc = XCreateGC (display, pixmap, 0, NULL);
+      XColor red, blue, exact;
+      XAllocNamedColor (display, DefaultColormap (display, DefaultScreen (display)), "red", &red, &exact);
+      XAllocNamedColor (display, DefaultColormap (display, DefaultScreen (display)), "blue", &blue, &exact);
+      XSetForeground (display, gc, red.pixel);
+      XFillRectangle (display, pixmap, gc, 0, 0, 64, 64);
+      XSetForeground (display, gc, blue.pixel);
+      XFillRectangle (display, pixmap, gc, 32, 0, 32, 32);
+      XFillRectangle (display, pixmap, gc, 0, 32, 32, 32);
+      XChangeProperty (display, root, property, XA_PIXMAP, 32, PropModeReplace,
+                       (unsigned char *)&pixmap, 1);
+      XSync (display, False);
+      [TerminalPreferences setTerminalForegroundColor:[NSColor whiteColor]
+                                     backgroundColor:[NSColor blackColor]];
+      [TerminalPreferences setTerminalTransparency:1];
+      terminal_feed (view, @"\033c\033[?25l");
+      for (int step = 0; step < 3; step++)
+        {
+          [window setFrameOrigin:NSMakePoint (100 + step * 19, 100 + step * 11)];
+          [view setNeedsDisplay:YES]; [window display];
+          NSBitmapImageRep *bitmap = [view bitmapImageRepForCachingDisplayInRect:[view bounds]];
+          [view cacheDisplayInRect:[view bounds] toBitmapImageRep:bitmap];
+          NSPoint top = [window convertBaseToScreen:[view convertPoint:NSZeroPoint toView:nil]];
+          int rootX = (int)top.x + 100;
+          int rootY = (int)(NSMaxY ([[[NSScreen screens] objectAtIndex:0] frame]) - top.y) + 70;
+          BOOL bluePixel = ((rootX / 32) % 2) != ((rootY / 32) % 2);
+          test_assert (color_matches ([bitmap colorAtX:100 y:70], !bluePixel, 0, bluePixel),
+                       @"Wallpaper stays aligned horizontally and vertically after moving");
+        }
+      [TerminalPreferences setTerminalTransparency:0.5];
+      terminal_feed (view, @"\033[41m  \033[0m");
+      [view setNeedsDisplay:YES]; [window display];
+      NSBitmapImageRep *bitmap = [view bitmapImageRepForCachingDisplayInRect:[view bounds]];
+      [view cacheDisplayInRect:[view bounds] toBitmapImageRep:bitmap];
+      NSColor *pixel = [[bitmap colorAtX:100 y:70] colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
+      test_assert (fabs (MAX ([pixel redComponent], [pixel blueComponent]) - 0.5) < 0.03,
+                   @"Wallpaper blends with the configured background tint");
+      test_assert (color_matches ([bitmap colorAtX:(int)[NSScroller scrollerWidth] + 2 y:2], 224.0 / 255.0, 0, 0),
+                   @"Explicit ANSI backgrounds remain opaque");
+      XFreePixmap (display, pixmap); XSync (display, False);
+      /* A new, invalid ID exercises the stale-pixmap error path. */
+      unsigned long invalid = 0x7fffffff;
+      XChangeProperty (display, root, property, XA_PIXMAP, 32, PropModeReplace,
+                       (unsigned char *)&invalid, 1); XSync (display, False);
+      [view setNeedsDisplay:YES]; [window display];
+      [view cacheDisplayInRect:[view bounds] toBitmapImageRep:bitmap];
+      test_assert (color_matches ([bitmap colorAtX:100 y:70], 0, 0, 0),
+                   @"Stale wallpaper pixmaps safely fall back to solid background");
+      if (type != None)
+        XChangeProperty (display, root, property, type, format, PropModeReplace, saved, count);
+      else XDeleteProperty (display, root, property);
+      if (saved) XFree (saved);
+      XFreeGC (display, gc); XCloseDisplay (display);
+    }
+  [window close]; [view release]; [window release];
+#endif
+  [TerminalPreferences resetTerminalPreferences];
+}
 
 static BOOL
 cursor_pixel_visible (TerminalView *view)
@@ -1610,6 +1835,9 @@ main (int argc, const char **argv)
                    [TerminalPreferences terminalScrollbackLines] == 5000,
                @"Corrupt saved settings fall back safely");
   [TerminalPreferences resetTerminalPreferences];
+  test_partial_input_writes ();
+  test_output_responsiveness ();
+  test_wallpaper ();
   test_active_cursor ();
   test_terminal (directory);
   test_initial_size_and_programs (directory);

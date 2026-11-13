@@ -41,8 +41,13 @@ The suite covers:
   descriptor shutdown, and shell/foreground-job cleanup without zombies.
 - Real Vim edit/save/exit, less alternate-screen entry/exit, interactive top and
   resizing during top. A hangup-ignoring Python job is killed and reaped.
-- A 1 MiB input queue against a blocked reader while the GUI run loop and resize
-  remain responsive.
+- A real 1 MiB clipboard paste against a blocked reader while the GUI run loop
+  and resize remain responsive.
+- Output damage batching and time-bounded polling under simulated slow parsing,
+  plus exact byte ordering across partial input writes and appended input.
+  The slow-parser regression failed before the fix (a poll took about 0.51 s)
+  and yielded after about 0.012 s with the fix on this machine. This is a
+  fairness regression, not a terminal throughput benchmark.
 - Actual Fonts-panel `modifyFontViaPanel:` responder dispatch and Color-panel
   activation/actions. Live font changes preserve shell PID and update PTY size.
 - Pixel checks for all five cursor choices, contrasting text under a filled
@@ -82,3 +87,9 @@ The GUI suite also checks cursor and mouse mode forwarding and ignored OSC
 titles through the application-owned parser. The engine replacement removes
 the libvterm union that caused the original GCC bit-field encoding failure;
 system libvterm build modes no longer apply.
+
+Wallpaper regression checks publish a temporary tiled X11 root pixmap and verify
+window movement alignment on both axes, tint blending, opaque ANSI backgrounds,
+and safe fallback for stale pixmaps. They also check the default setting, input
+validation, and profile copying. Run these with `xvfb-run -a make check` to isolate
+the temporary wallpaper property from your desktop.

@@ -133,3 +133,16 @@ shell) after the directory. Both options default to on and apply immediately.
 On Linux, the directory follows the shell's working directory; background and
 stopped jobs are also detected for confirmation. Other POSIX systems detect
 foreground jobs, but process names and live directory tracking require /proc.
+
+Wallpaper transparency
+----------------------
+In Preferences, move Wallpaper transparency right to reveal the desktop wallpaper
+through the default terminal background. Move it fully left to disable the effect
+(the default). The Background color supplies the tint. This setting is saved per
+profile; text, selections, cursor, and explicit ANSI background colors stay opaque.
+The wallpaper is aligned with the desktop as the window moves. No compositor is
+needed, and other windows behind Prompt are not shown.
+Requires the GNUstep X11 backend and a desktop that publishes a wallpaper pixmap
+through _XROOTPMAP_ID or ESETROOT_PMAP_ID. Otherwise Prompt keeps the solid background.
+Published wallpaper replacements are detected while the terminal session runs.
+Backdrops repainted in place without publishing a new pixmap are not detected.

@@ -17,6 +17,7 @@
 #endif
 #import "TerminalView.h"
 #import "TerminalPreferences.h"
+#import "TerminalWallpaper.h"
 #ifdef TERMINAL_X11_RESIZE
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -166,6 +167,9 @@ static NSUInteger cleanup_count;
              selector:@selector (preferencesChanged:)
                  name:TerminalPreferencesDidChangeNotification
                object:nil];
+      [[NSNotificationCenter defaultCenter]
+          addObserver:self selector:@selector (wallpaperWindowMoved:)
+          name:NSWindowDidMoveNotification object:nil];
       [self setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
     }
   return self;
@@ -182,6 +186,7 @@ static NSUInteger cleanup_count;
   RELEASE (_history);
   RELEASE (_foregroundColor);
   RELEASE (_backgroundColor);
+  RELEASE (_wallpaper);
   RELEASE (_cursorColor);
   RELEASE (_pendingInput);
   RELEASE (_directory);
@@ -248,6 +253,11 @@ static NSUInteger cleanup_count;
   ASSIGN (_foregroundColor, [preferences terminalForegroundColor]);
   ASSIGN (_backgroundColor, [preferences terminalBackgroundColor]);
   ASSIGN (_cursorColor, [preferences terminalCursorColor]);
+  _transparency = [preferences terminalTransparency];
+  if (_transparency > 0 && !_wallpaper)
+    _wallpaper = [[TerminalWallpaper alloc] init];
+  if (_transparency == 0)
+    DESTROY (_wallpaper);
   _preferredCursorShape = [preferences terminalCursorShape];
   _scrollbackLimit = [preferences terminalScrollbackLines];
   if ([_history count] > _scrollbackLimit)
@@ -346,18 +356,24 @@ static NSUInteger cleanup_count;
   /* While browsing history, screen rows and visible rows no longer coincide. */
   if (_scrollOffset)
     {
-      [self setNeedsDisplay:YES];
+      if (_collectingDamage)
+        _pendingDamage = [self bounds];
+      else
+        [self setNeedsDisplay:YES];
       return;
     }
   /* Include neighbouring cells so either half of a wide glyph is repainted. */
   int start = MAX (0, rect.start_col - 1),
       end = MIN (_columns, rect.end_col + 1);
-  [self
-      setNeedsDisplayInRect:NSMakeRect (
-                                [NSScroller scrollerWidth] + start * _cellWidth,
-                                rect.start_row * _cellHeight,
-                                (end - start) * _cellWidth,
-                                (rect.end_row - rect.start_row) * _cellHeight)];
+  NSRect damage = NSMakeRect ([NSScroller scrollerWidth] + start * _cellWidth,
+                              rect.start_row * _cellHeight,
+                              (end - start) * _cellWidth,
+                              (rect.end_row - rect.start_row) * _cellHeight);
+  if (_collectingDamage)
+    _pendingDamage = NSIsEmptyRect (_pendingDamage)
+                         ? damage : NSUnionRect (_pendingDamage, damage);
+  else
+    [self setNeedsDisplayInRect:damage];
 }
 
 - (void)invalidateCursorAt:(TerminalPosition)position
@@ -535,8 +551,14 @@ static NSUInteger cleanup_count;
 
 - (void)consumeData:(NSData *)data
 {
+  /* The parser reports every cell in a dirty row. Submit one AppKit damage
+   * region per batch, including the old and new cursor positions. */
+  _pendingDamage = NSZeroRect;
+  _collectingDamage = YES;
   [_terminal processBytes:[data bytes] length:[data length]];
-  [_terminal flush];
+  _collectingDamage = NO;
+  if (!NSIsEmptyRect (_pendingDamage))
+    [self setNeedsDisplayInRect:_pendingDamage];
   [self updateScroller];
 }
 
@@ -1017,6 +1039,7 @@ static NSUInteger cleanup_count;
   _session = _child = _master = -1;
   [self updateSessionTitle];
   [_pendingInput setLength:0];
+  _pendingInputOffset = 0;
 }
 
 - (BOOL)hasActiveJobs
@@ -1117,6 +1140,11 @@ static NSUInteger cleanup_count;
 - (void)poll:(NSTimer *)timer
 {
   NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+  if (_transparency > 0 && now - _lastWallpaperUpdate >= 0.2)
+    {
+      _lastWallpaperUpdate = now;
+      [self updateWallpaper];
+    }
   if (now - _lastSessionUpdate >= 0.5)
     {
       _lastSessionUpdate = now;
@@ -1128,7 +1156,11 @@ static NSUInteger cleanup_count;
       [self advanceBlink];
     }
 #ifndef _WIN32
-  char buffer[8192];
+  /* A byte cap alone permits expensive output to monopolize the main loop.
+   * Check elapsed time between small batches, while still servicing input on
+   * every tick even when the child continuously produces output. */
+  NSTimeInterval deadline = [NSDate timeIntervalSinceReferenceDate] + 0.004;
+  char buffer[4096];
   ssize_t count;
   NSUInteger total = 0;
   BOOL finished = NO;
@@ -1139,6 +1171,8 @@ static NSUInteger cleanup_count;
         {
           [self consumeData:[NSData dataWithBytes:buffer length:count]];
           total += count;
+          if ([NSDate timeIntervalSinceReferenceDate] >= deadline)
+            break;
         }
       else if (count < 0 && errno == EINTR)
         continue;
@@ -1151,11 +1185,27 @@ static NSUInteger cleanup_count;
     }
   if (!finished && [_pendingInput length])
     {
-      count = write (_master, [_pendingInput bytes], [_pendingInput length]);
+      count = write (_master,
+                     (const char *)[_pendingInput bytes] + _pendingInputOffset,
+                     MIN (65536, [_pendingInput length] - _pendingInputOffset));
       if (count > 0)
-        [_pendingInput replaceBytesInRange:NSMakeRange (0, count)
-                                 withBytes:NULL
-                                    length:0];
+        {
+          _pendingInputOffset += count;
+          if (_pendingInputOffset == [_pendingInput length])
+            {
+              [_pendingInput setLength:0];
+              _pendingInputOffset = 0;
+            }
+          else if (_pendingInputOffset >= [_pendingInput length] / 2)
+            {
+              /* Compact geometrically, not after every partial PTY write:
+               * large pastes otherwise repeatedly copy the entire tail. */
+              [_pendingInput replaceBytesInRange:
+                                 NSMakeRange (0, _pendingInputOffset)
+                                      withBytes:NULL length:0];
+              _pendingInputOffset = 0;
+            }
+        }
       else if (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK
                && errno != EINTR)
         finished = YES;
@@ -1251,10 +1301,59 @@ static NSUInteger cleanup_count;
                                    alpha:1];
 }
 
+- (void)wallpaperWindowMoved:(NSNotification *)notification
+{
+  if ([notification object] == [self window] && _transparency > 0)
+    [self setNeedsDisplay:YES];
+}
+
+- (void)updateWallpaper
+{
+#ifdef TERMINAL_X11_RESIZE
+  if (![self window] || ![GSServerForWindow ([self window]) respondsToSelector:
+      @selector (xDisplayRootWindow)])
+    return;
+  BOOL changed = [_wallpaper refresh];
+  NSPoint position = [[self window] convertBaseToScreen:
+      [self convertPoint:NSZeroPoint toView:nil]];
+  if (changed || !NSEqualPoints (position, _wallpaperPosition))
+    {
+      _wallpaperPosition = position;
+      [self setNeedsDisplay:YES];
+    }
+#endif
+}
+
+- (BOOL)drawWallpaper:(NSRect)dirty
+{
+  if (_transparency <= 0 || ![self window]) return NO;
+  [self updateWallpaper];
+  NSImage *image = [_wallpaper image];
+  NSSize size = [image size];
+  if (!image || size.width <= 0 || size.height <= 0) return NO;
+  /* AppKit screen coordinates grow upward; X11 root coordinates grow down.
+   * Small root pixmaps are tiled, just as they are on the desktop. */
+  CGFloat rootX = _wallpaperPosition.x;
+  CGFloat rootY = NSMaxY ([[[NSScreen screens] objectAtIndex:0] frame])
+      - _wallpaperPosition.y;
+  CGFloat startX = floor ((NSMinX (dirty) + rootX) / size.width) * size.width - rootX;
+  CGFloat startY = floor ((NSMinY (dirty) + rootY) / size.height) * size.height - rootY;
+  [NSGraphicsContext saveGraphicsState];
+  NSRectClip (dirty);
+  for (CGFloat y = startY; y < NSMaxY (dirty); y += size.height)
+    for (CGFloat x = startX; x < NSMaxX (dirty); x += size.width)
+      [image drawInRect:NSMakeRect (x, y, size.width, size.height)
+              fromRect:NSZeroRect operation:NSCompositeSourceOver
+              fraction:_transparency respectFlipped:YES hints:nil];
+  [NSGraphicsContext restoreGraphicsState];
+  return YES;
+}
+
 - (void)drawRect:(NSRect)dirty
 {
   [_backgroundColor set];
   NSRectFill (dirty);
+  BOOL wallpaperDrawn = [self drawWallpaper:dirty];
   NSInteger history = _alternateScreen ? 0 : [_history count];
   NSInteger first = history - _scrollOffset;
   NSInteger low = MIN (_selectionStart, _selectionEnd),
@@ -1303,8 +1402,13 @@ static NSUInteger cleanup_count;
               }
             if (pass == 0)
               {
-                [bg set];
-                NSRectFill (rect);
+                BOOL selected = low >= 0 && position >= low && position <= high;
+                if (!(wallpaperDrawn && cell.bg.kind == TerminalColorDefaultBackground
+                      && !(cell.attributes & TerminalReverse) && !selected))
+                  {
+                    [bg set];
+                    NSRectFill (rect);
+                  }
                 continue;
               }
             if (cell.width == 0 || (cell.attributes & TerminalConceal)

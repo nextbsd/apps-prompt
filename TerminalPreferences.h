@@ -81,5 +81,8 @@ extern NSString *TerminalPreferencesDidChangeNotification;
 + (BOOL)terminalShowProcess;
 - (BOOL)terminalShowProcess;
 + (void)setTerminalShowProcess:(BOOL)enabled;
++ (double)terminalTransparency;
+- (double)terminalTransparency;
++ (void)setTerminalTransparency:(double)value;
 + (void)resetTerminalPreferences;
 @end
