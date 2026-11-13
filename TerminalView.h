@@ -35,7 +35,8 @@
   NSString *_profileName;
   TerminalWallpaper *_wallpaper;
   double _transparency;
-  NSTimeInterval _lastWallpaperUpdate;
+  NSTimeInterval _lastWallpaperUpdate, _transparencySampleInterval;
+  BOOL _transparencySampleOnMoveOnly;
   NSPoint _wallpaperPosition;
   NSFont *_font;
   NSFont *_boldFont;

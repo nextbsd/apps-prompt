@@ -32,6 +32,7 @@
 #import <AppKit/AppKit.h>
 #import "TerminalView.h"
 #import "TerminalPreferences.h"
+#import "TerminalWallpaper.h"
 #import "AppController.h"
 #ifdef TERMINAL_X11_RESIZE
 #include <X11/Xlib.h>
@@ -1073,6 +1074,8 @@ test_preferences_and_rendering (NSString *directory)
   [[terminal window] close];
   RELEASE (terminal);
   [[app valueForKey:@"_preferences"] orderOut:nil];
+  /* Menu targets are unretained; remove them before releasing the controller. */
+  [NSApp setMainMenu:nil];
   RELEASE (app);
 }
 
@@ -1304,16 +1307,70 @@ test_wallpaper (void)
   [TerminalPreferences resetTerminalPreferences];
   test_assert ([TerminalPreferences terminalTransparency] == 0,
                @"Wallpaper transparency defaults to off");
+  test_assert (![TerminalPreferences terminalTransparencyEnabled],
+               @"Transparency switch defaults to off");
+  test_assert ([TerminalPreferences terminalTransparencySampleInterval] == 5,
+               @"Background sampling defaults to five seconds");
+  AppController *app = [[AppController alloc] init];
+  [app showPreferences:nil];
+  NSSlider *interval = [app valueForKey:@"transparencySampleInterval"];
+  test_assert ([interval minValue] == 1 && [interval maxValue] == 10
+               && [interval doubleValue] == 5 && ![interval isEnabled],
+               @"Sampling slider has the default and bounds and is disabled with transparency");
+  NSButton *enabled = [app valueForKey:@"transparencyEnabled"];
+  [enabled setState:NSOnState];
+  [enabled sendAction:[enabled action] to:[enabled target]];
+  [interval setDoubleValue:10];
+  [interval sendAction:[interval action] to:[interval target]];
+  test_assert ([interval isEnabled]
+               && [TerminalPreferences terminalTransparencySampleInterval] == 10
+               && [[[app valueForKey:@"transparencySampleIntervalLabel"] stringValue]
+                   isEqual:@"Sample interval: 10 seconds"],
+               @"Sampling slider saves its interval and displays seconds");
+  NSButton *moveOnly = [app valueForKey:@"transparencySampleOnMoveOnly"];
+  [moveOnly setState:NSOnState];
+  [moveOnly sendAction:[moveOnly action] to:[moveOnly target]];
+  test_assert ([TerminalPreferences terminalTransparencySampleOnMoveOnly]
+               && ![interval isEnabled]
+               && [TerminalPreferences terminalTransparencySampleInterval] == 10,
+               @"Move-only sampling disables the interval slider and preserves its value");
+  [moveOnly setState:NSOffState];
+  [moveOnly sendAction:[moveOnly action] to:[moveOnly target]];
+  test_assert ([interval isEnabled], @"Timed sampling restores the interval slider");
+  [TerminalPreferences setTerminalTransparencySampleInterval:0];
+  [TerminalPreferences setTerminalTransparencySampleInterval:11];
+  [TerminalPreferences setTerminalTransparencySampleInterval:NAN];
+  test_assert ([TerminalPreferences terminalTransparencySampleInterval] == 10,
+               @"Invalid sample intervals preserve the saved value");
+  [[app valueForKey:@"preferences"] orderOut:nil];
+  RELEASE (app);
+  [TerminalPreferences resetTerminalPreferences];
+  [TerminalPreferences setTerminalTransparencySampleInterval:10];
   [TerminalPreferences setTerminalTransparency:0.5];
+  test_assert ([TerminalPreferences terminalTransparencyEnabled],
+               @"Legacy profiles retain enabled transparency");
+  [TerminalPreferences setTerminalTransparencyEnabled:NO];
+  test_assert (![TerminalPreferences terminalTransparencyEnabled]
+               && [TerminalPreferences terminalTransparency] == 0.5,
+               @"Disabling transparency preserves the amount");
   [TerminalPreferences setTerminalTransparency:NAN];
   [TerminalPreferences setTerminalTransparency:2];
   test_assert ([TerminalPreferences terminalTransparency] == 0.5,
                @"Invalid transparency values do not replace valid settings");
+  [TerminalPreferences setTerminalTransparencySampleOnMoveOnly:YES];
   [TerminalPreferences duplicateSelectedProfileWithName:@"Wallpaper test"];
+  test_assert ([TerminalPreferences terminalTransparencySampleOnMoveOnly],
+               @"Profile copies preserve move-only sampling");
   test_assert ([TerminalPreferences terminalTransparency] == 0.5,
                @"Profile copies preserve wallpaper transparency");
+  test_assert ([TerminalPreferences terminalTransparencySampleInterval] == 10,
+               @"Profile copies preserve the sampling interval");
+  test_assert (![TerminalPreferences terminalTransparencyEnabled],
+               @"Profile copies preserve the disabled switch");
   [TerminalPreferences deleteSelectedProfile];
   [TerminalPreferences selectProfile:@"Default"];
+  [TerminalPreferences setTerminalTransparencySampleOnMoveOnly:NO];
+  [TerminalPreferences setTerminalTransparencyEnabled:YES];
 #ifdef TERMINAL_X11_RESIZE
   NSWindow *window = [[NSWindow alloc]
       initWithContentRect:NSMakeRect (100, 100, 320, 180)
@@ -1347,6 +1404,8 @@ test_wallpaper (void)
       [TerminalPreferences setTerminalForegroundColor:[NSColor whiteColor]
                                      backgroundColor:[NSColor blackColor]];
       [TerminalPreferences setTerminalTransparency:1];
+      /* Make the newly published fixture available on the next sampling tick. */
+      [view setValue:[NSNumber numberWithDouble:0] forKey:@"lastWallpaperUpdate"];
       terminal_feed (view, @"\033c\033[?25l");
       for (int step = 0; step < 3; step++)
         {
@@ -1361,6 +1420,41 @@ test_wallpaper (void)
           test_assert (color_matches ([bitmap colorAtX:100 y:70], !bluePixel, 0, bluePixel),
                        @"Wallpaper stays aligned horizontally and vertically after moving");
         }
+      NSNumber *sampleTime = [view valueForKey:@"lastWallpaperUpdate"];
+      [view setNeedsDisplay:YES]; [window display];
+      test_assert ([[view valueForKey:@"lastWallpaperUpdate"] isEqual:sampleTime],
+                   @"Redraws reuse the background capture within the sample interval");
+      NSNumber *agedSampleTime = [NSNumber numberWithDouble:[sampleTime doubleValue] - 6];
+      [view setValue:agedSampleTime forKey:@"lastWallpaperUpdate"];
+      [view setNeedsDisplay:YES]; [window display];
+      test_assert ([[view valueForKey:@"lastWallpaperUpdate"] isEqual:agedSampleTime],
+                   @"Ten-second interval reuses a six-second-old capture");
+      [TerminalPreferences setTerminalTransparencySampleInterval:1];
+      [view setNeedsDisplay:YES]; [window display];
+      test_assert ([[view valueForKey:@"lastWallpaperUpdate"] doubleValue] >= [sampleTime doubleValue],
+                   @"Background capture refreshes after the interval expires");
+      [TerminalPreferences setTerminalTransparencySampleOnMoveOnly:YES];
+      NSNumber *oldSampleTime = [NSNumber numberWithDouble:
+          [NSDate timeIntervalSinceReferenceDate] - 20];
+      [view setValue:oldSampleTime forKey:@"lastWallpaperUpdate"];
+      [view setNeedsDisplay:YES]; [window display];
+      test_assert ([[view valueForKey:@"lastWallpaperUpdate"] isEqual:oldSampleTime],
+                   @"Move-only sampling reuses an old capture while stationary");
+      [window setFrameOrigin:NSMakePoint (180, 160)];
+      [window display];
+      test_assert ([[view valueForKey:@"lastWallpaperUpdate"] doubleValue]
+                   > [oldSampleTime doubleValue],
+                   @"Moving the window refreshes immediately in move-only mode");
+      [TerminalPreferences setTerminalTransparencySampleOnMoveOnly:NO];
+      [TerminalPreferences setTerminalTransparencyEnabled:NO];
+      [view setNeedsDisplay:YES]; [window display];
+      test_assert ([view valueForKey:@"wallpaper"] == nil,
+                   @"Disabling transparency releases the sampler and its X11 connection");
+      NSBitmapImageRep *solid = [view bitmapImageRepForCachingDisplayInRect:[view bounds]];
+      [view cacheDisplayInRect:[view bounds] toBitmapImageRep:solid];
+      test_assert (color_matches ([solid colorAtX:100 y:70], 0, 0, 0),
+                   @"Disabled transparency renders a solid background");
+      [TerminalPreferences setTerminalTransparencyEnabled:YES];
       [TerminalPreferences setTerminalTransparency:0.5];
       terminal_feed (view, @"\033[41m  \033[0m");
       [view setNeedsDisplay:YES]; [window display];
@@ -1376,6 +1470,7 @@ test_wallpaper (void)
       unsigned long invalid = 0x7fffffff;
       XChangeProperty (display, root, property, XA_PIXMAP, 32, PropModeReplace,
                        (unsigned char *)&invalid, 1); XSync (display, False);
+      [view setValue:[NSNumber numberWithDouble:0] forKey:@"lastWallpaperUpdate"];
       [view setNeedsDisplay:YES]; [window display];
       [view cacheDisplayInRect:[view bounds] toBitmapImageRep:bitmap];
       test_assert (color_matches ([bitmap colorAtX:100 y:70], 0, 0, 0),
@@ -1389,6 +1484,53 @@ test_wallpaper (void)
   [window close]; [view release]; [window release];
 #endif
   [TerminalPreferences resetTerminalPreferences];
+}
+
+static void
+test_sampled_background (void)
+{
+#ifdef TERMINAL_X11_COMPOSITE
+  Display *display = XOpenDisplay (NULL);
+  Window root = DefaultRootWindow (display);
+  Window behind = XCreateSimpleWindow (display, root, 10, 10, 80, 80, 0, 0, 0xff0000);
+  Window terminal = XCreateSimpleWindow (display, root, 10, 10, 80, 80, 0, 0, 0x0000ff);
+  Window above = XCreateSimpleWindow (display, root, 10, 10, 80, 80, 0, 0, 0x00ff00);
+  TerminalWallpaper *sampler = [[TerminalWallpaper alloc] init];
+  /* Start retaining obscured pixels before mapping the fixture windows. */
+  [sampler refreshForWindow:terminal];
+  XMapWindow (display, behind);
+  XMapWindow (display, terminal);
+  XMapWindow (display, above);
+  XSync (display, False);
+  [sampler refreshForWindow:terminal];
+  NSBitmapImageRep *bitmap = [[[sampler image] representations] objectAtIndex:0];
+  test_assert (color_matches ([bitmap colorAtX:30 y:30], 1, 0, 0),
+               @"Sample includes obscured windows below terminal, excludes self and windows above");
+  XSetWindowBackground (display, behind, 0x00ff00);
+  XClearWindow (display, behind);
+  XSync (display, False);
+  [sampler refreshForWindow:terminal];
+  bitmap = [[[sampler image] representations] objectAtIndex:0];
+  test_assert (color_matches ([bitmap colorAtX:30 y:30], 0, 1, 0),
+               @"Sample refreshes repainted pixels behind an obscuring terminal");
+  XMoveWindow (display, behind, 110, 110);
+  XSync (display, False);
+  [sampler refreshForWindow:terminal];
+  bitmap = [[[sampler image] representations] objectAtIndex:0];
+  test_assert (color_matches ([bitmap colorAtX:130 y:130], 0, 1, 0)
+               && !color_matches ([bitmap colorAtX:30 y:30], 0, 1, 0),
+               @"Sample follows movement of windows behind terminal");
+  XDestroyWindow (display, behind);
+  XSync (display, False);
+  [sampler refreshForWindow:terminal];
+  bitmap = [[[sampler image] representations] objectAtIndex:0];
+  test_assert (!color_matches ([bitmap colorAtX:130 y:130], 0, 1, 0),
+               @"Destroyed windows disappear from sampled background");
+  RELEASE (sampler);
+  XDestroyWindow (display, terminal);
+  XDestroyWindow (display, above);
+  XCloseDisplay (display);
+#endif
 }
 
 static BOOL
@@ -1838,6 +1980,7 @@ main (int argc, const char **argv)
   test_partial_input_writes ();
   test_output_responsiveness ();
   test_wallpaper ();
+  test_sampled_background ();
   test_active_cursor ();
   test_terminal (directory);
   test_initial_size_and_programs (directory);

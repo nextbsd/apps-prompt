@@ -508,6 +508,25 @@ NSString *TerminalPreferencesDidChangeNotification
   [self setTerminalValue:[NSNumber numberWithBool:enabled] forKey:@"showProcess"];
 }
 
+- (BOOL)terminalTransparencyEnabled
+{
+  id value = [[self terminalSettings] objectForKey:@"transparencyEnabled"];
+  /* Preserve the effect for profiles saved before the explicit switch existed. */
+  return [value isKindOfClass:[NSNumber class]] ? [value boolValue]
+                                               : [self terminalTransparency] > 0;
+}
+
++ (BOOL)terminalTransparencyEnabled
+{
+  return [AUTORELEASE ([[self alloc]
+      initWithProfileName:[self selectedProfileName]]) terminalTransparencyEnabled];
+}
+
++ (void)setTerminalTransparencyEnabled:(BOOL)enabled
+{
+  [self setTerminalValue:[NSNumber numberWithBool:enabled] forKey:@"transparencyEnabled"];
+}
+
 - (double)terminalTransparency
 {
   id value = [[self terminalSettings] objectForKey:@"transparency"];
@@ -525,6 +544,44 @@ NSString *TerminalPreferencesDidChangeNotification
 {
   if (isfinite (value) && value >= 0 && value <= 1)
     [self setTerminalValue:[NSNumber numberWithDouble:value] forKey:@"transparency"];
+}
+
+- (NSTimeInterval)terminalTransparencySampleInterval
+{
+  id value = [[self terminalSettings] objectForKey:@"transparencySampleInterval"];
+  double seconds = [value isKindOfClass:[NSNumber class]] ? [value doubleValue] : 5;
+  return isfinite (seconds) && seconds >= 1 && seconds <= 10 ? seconds : 5;
+}
+
++ (NSTimeInterval)terminalTransparencySampleInterval
+{
+  return [AUTORELEASE ([[self alloc]
+      initWithProfileName:[self selectedProfileName]]) terminalTransparencySampleInterval];
+}
+
++ (void)setTerminalTransparencySampleInterval:(NSTimeInterval)seconds
+{
+  if (isfinite (seconds) && seconds >= 1 && seconds <= 10)
+    [self setTerminalValue:[NSNumber numberWithDouble:seconds]
+                   forKey:@"transparencySampleInterval"];
+}
+
+- (BOOL)terminalTransparencySampleOnMoveOnly
+{
+  id value = [[self terminalSettings] objectForKey:@"transparencySampleOnMoveOnly"];
+  return [value isKindOfClass:[NSNumber class]] ? [value boolValue] : NO;
+}
+
++ (BOOL)terminalTransparencySampleOnMoveOnly
+{
+  return [AUTORELEASE ([[self alloc]
+      initWithProfileName:[self selectedProfileName]]) terminalTransparencySampleOnMoveOnly];
+}
+
++ (void)setTerminalTransparencySampleOnMoveOnly:(BOOL)enabled
+{
+  [self setTerminalValue:[NSNumber numberWithBool:enabled]
+                 forKey:@"transparencySampleOnMoveOnly"];
 }
 
 + (void)resetTerminalPreferences

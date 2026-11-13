@@ -8,7 +8,9 @@
   NSWindow *_help;
   NSWindow *_lastTerminalWindow; /* owned by _windows */
   NSButton *_fontButton, *_bell, *_blink, *_closeOnExit, *_confirmClose, *_showProcess;
-  NSSlider *_transparency;
+  NSButton *_transparencyEnabled, *_transparencySampleOnMoveOnly;
+  NSSlider *_transparency, *_transparencySampleInterval;
+  NSTextField *_transparencySampleIntervalLabel;
   NSColorWell *_foreground, *_background, *_cursor;
   NSPopUpButton *_shape, *_profiles;
   NSTextField *_profileName, *_profileStatus;

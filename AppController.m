@@ -285,7 +285,17 @@ label (NSView *view, NSString *text, CGFloat y)
                                               pointSize]]];
   [_foreground setColor:[TerminalPreferences terminalForegroundColor]];
   [_background setColor:[TerminalPreferences terminalBackgroundColor]];
+  [_transparencyEnabled setState:[TerminalPreferences terminalTransparencyEnabled]];
+  [_transparency setEnabled:[TerminalPreferences terminalTransparencyEnabled]];
   [_transparency setDoubleValue:[TerminalPreferences terminalTransparency]];
+  [_transparencySampleOnMoveOnly setState:[TerminalPreferences terminalTransparencySampleOnMoveOnly]];
+  [_transparencySampleOnMoveOnly setEnabled:[TerminalPreferences terminalTransparencyEnabled]];
+  [_transparencySampleInterval setEnabled:[TerminalPreferences terminalTransparencyEnabled]
+      && ![TerminalPreferences terminalTransparencySampleOnMoveOnly]];
+  [_transparencySampleInterval setDoubleValue:[TerminalPreferences terminalTransparencySampleInterval]];
+  [_transparencySampleIntervalLabel setStringValue:[NSString
+      stringWithFormat:@"Sample interval: %.0f seconds",
+                       [TerminalPreferences terminalTransparencySampleInterval]]];
   [_cursor setColor:[TerminalPreferences terminalCursorColor]];
   [_shape selectItemAtIndex:[TerminalPreferences terminalCursorShape]];
   [_columns setIntegerValue:[TerminalPreferences terminalColumns]];
@@ -303,7 +313,7 @@ label (NSView *view, NSString *text, CGFloat y)
   if (!_preferences)
     {
       _preferences = [[TerminalPreferencesPanel alloc]
-          initWithContentRect:NSMakeRect (180, 180, 720, 680)
+          initWithContentRect:NSMakeRect (180, 180, 720, 750)
                     styleMask:NSTitledWindowMask | NSClosableWindowMask
                       backing:NSBackingStoreBuffered
                         defer:NO];
@@ -432,19 +442,45 @@ label (NSView *view, NSString *text, CGFloat y)
           [button setAction:@selector (changeSettings:)];
           [view addSubview:button];
         }
-      NSTextField *transparencyLabel = label (view, @"Wallpaper transparency", 640);
+      _transparencyEnabled = AUTORELEASE ([[NSButton alloc]
+          initWithFrame:NSMakeRect (260, 710, 440, 28)]);
+      [_transparencyEnabled setTitle:@"Enable transparency"];
+      [_transparencyEnabled setButtonType:NSSwitchButton];
+      [_transparencyEnabled setTarget:self];
+      [_transparencyEnabled setAction:@selector (toggleTransparency:)];
+      [_transparencyEnabled setToolTip:@"Turn off to stop all background sampling; the amount is preserved."];
+      [view addSubview:_transparencyEnabled];
+      _transparencySampleOnMoveOnly = AUTORELEASE ([[NSButton alloc]
+          initWithFrame:NSMakeRect (260, 675, 440, 28)]);
+      [_transparencySampleOnMoveOnly setTitle:@"Sample only when window moves"];
+      [_transparencySampleOnMoveOnly setButtonType:NSSwitchButton];
+      [_transparencySampleOnMoveOnly setTarget:self];
+      [_transparencySampleOnMoveOnly setAction:@selector (toggleTransparencySampleOnMoveOnly:)];
+      [view addSubview:_transparencySampleOnMoveOnly];
+      NSTextField *transparencyLabel = label (view, @"Background transparency", 640);
       [transparencyLabel setFrame:NSMakeRect (260, 640, 230, 24)];
       _transparency = AUTORELEASE ([[NSSlider alloc]
           initWithFrame:NSMakeRect (490, 640, 200, 24)]);
       [_transparency setMinValue:0];
       [_transparency setMaxValue:1];
-      [_transparency setContinuous:YES];
+      [_transparency setContinuous:NO];
       [_transparency setTarget:self];
       [_transparency setAction:@selector (changeTransparency:)];
-      [_transparency setToolTip:@"Left: solid background. Right: wallpaper with opaque text."];
+      [_transparency setToolTip:@"Left: solid background. Right: sampled background with opaque text."];
       [view addSubview:_transparency];
-      NSTextField *wallpaperHint = label (view, @"Requires an X11 desktop that publishes its wallpaper.", 610);
-      [wallpaperHint setFrame:NSMakeRect (260, 610, 440, 24)];
+      _transparencySampleIntervalLabel = label (view, @"", 605);
+      [_transparencySampleIntervalLabel setFrame:NSMakeRect (260, 605, 230, 24)];
+      _transparencySampleInterval = AUTORELEASE ([[NSSlider alloc]
+          initWithFrame:NSMakeRect (490, 605, 200, 24)]);
+      [_transparencySampleInterval setMinValue:1];
+      [_transparencySampleInterval setMaxValue:10];
+      [_transparencySampleInterval setNumberOfTickMarks:10];
+      [_transparencySampleInterval setAllowsTickMarkValuesOnly:YES];
+      [_transparencySampleInterval setContinuous:YES];
+      [_transparencySampleInterval setTarget:self];
+      [_transparencySampleInterval setAction:@selector (changeTransparencySampleInterval:)];
+      [_transparencySampleInterval setToolTip:@"Seconds between background samples: 1–10 (default 5)."];
+      [view addSubview:_transparencySampleInterval];
       label (view, @"Profiles", 460);
       _profiles = AUTORELEASE (
           [[NSPopUpButton alloc] initWithFrame:NSMakeRect (20, 422, 210, 28)]);
@@ -595,9 +631,29 @@ label (NSView *view, NSString *text, CGFloat y)
   [self refreshPreferences];
 }
 
+- (void)toggleTransparency:(id)sender
+{
+  [TerminalPreferences setTerminalTransparencyEnabled:[_transparencyEnabled state] == NSOnState];
+  [self refreshPreferences];
+}
+
 - (void)changeTransparency:(id)sender
 {
   [TerminalPreferences setTerminalTransparency:[_transparency doubleValue]];
+}
+
+- (void)toggleTransparencySampleOnMoveOnly:(id)sender
+{
+  [TerminalPreferences setTerminalTransparencySampleOnMoveOnly:
+      [_transparencySampleOnMoveOnly state] == NSOnState];
+  [self refreshPreferences];
+}
+
+- (void)changeTransparencySampleInterval:(id)sender
+{
+  [TerminalPreferences setTerminalTransparencySampleInterval:
+      [_transparencySampleInterval doubleValue]];
+  [self refreshPreferences];
 }
 
 - (void)changeColors:(id)sender

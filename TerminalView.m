@@ -253,9 +253,15 @@ static NSUInteger cleanup_count;
   ASSIGN (_foregroundColor, [preferences terminalForegroundColor]);
   ASSIGN (_backgroundColor, [preferences terminalBackgroundColor]);
   ASSIGN (_cursorColor, [preferences terminalCursorColor]);
-  _transparency = [preferences terminalTransparency];
+  _transparency = [preferences terminalTransparencyEnabled]
+      ? [preferences terminalTransparency] : 0;
+  _transparencySampleInterval = [preferences terminalTransparencySampleInterval];
+  _transparencySampleOnMoveOnly = [preferences terminalTransparencySampleOnMoveOnly];
   if (_transparency > 0 && !_wallpaper)
-    _wallpaper = [[TerminalWallpaper alloc] init];
+    {
+      _wallpaper = [[TerminalWallpaper alloc] init];
+      _lastWallpaperUpdate = 0;
+    }
   if (_transparency == 0)
     DESTROY (_wallpaper);
   _preferredCursorShape = [preferences terminalCursorShape];
@@ -1140,10 +1146,10 @@ static NSUInteger cleanup_count;
 - (void)poll:(NSTimer *)timer
 {
   NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
-  if (_transparency > 0 && now - _lastWallpaperUpdate >= 0.2)
+  if (_transparency > 0 && !_transparencySampleOnMoveOnly
+      && now - _lastWallpaperUpdate >= _transparencySampleInterval)
     {
-      _lastWallpaperUpdate = now;
-      [self updateWallpaper];
+      [self setNeedsDisplay:YES];
     }
   if (now - _lastSessionUpdate >= 0.5)
     {
@@ -1309,19 +1315,24 @@ static NSUInteger cleanup_count;
 
 - (void)updateWallpaper
 {
-#ifdef TERMINAL_X11_RESIZE
-  if (![self window] || ![GSServerForWindow ([self window]) respondsToSelector:
-      @selector (xDisplayRootWindow)])
-    return;
-  BOOL changed = [_wallpaper refresh];
+  if (_transparency <= 0 || ![self window]) return;
+  NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
   NSPoint position = [[self window] convertBaseToScreen:
       [self convertPoint:NSZeroPoint toView:nil]];
-  if (changed || !NSEqualPoints (position, _wallpaperPosition))
+  BOOL refresh = _transparencySampleOnMoveOnly
+      ? !NSEqualPoints (position, _wallpaperPosition)
+      : now - _lastWallpaperUpdate >= _transparencySampleInterval;
+  /* Always capture initially; otherwise use the selected refresh policy. */
+  if (_lastWallpaperUpdate == 0 || refresh)
     {
-      _wallpaperPosition = position;
-      [self setNeedsDisplay:YES];
-    }
+#ifdef TERMINAL_X11_RESIZE
+      if ([GSServerForWindow ([self window]) respondsToSelector:
+          @selector (xDisplayRootWindow)])
+        [_wallpaper refreshForWindow:(unsigned long)[[self window] windowRef]];
 #endif
+      _lastWallpaperUpdate = [NSDate timeIntervalSinceReferenceDate];
+    }
+  _wallpaperPosition = position;
 }
 
 - (BOOL)drawWallpaper:(NSRect)dirty

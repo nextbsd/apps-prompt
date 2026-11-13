@@ -81,8 +81,17 @@ extern NSString *TerminalPreferencesDidChangeNotification;
 + (BOOL)terminalShowProcess;
 - (BOOL)terminalShowProcess;
 + (void)setTerminalShowProcess:(BOOL)enabled;
++ (BOOL)terminalTransparencyEnabled;
+- (BOOL)terminalTransparencyEnabled;
++ (void)setTerminalTransparencyEnabled:(BOOL)enabled;
 + (double)terminalTransparency;
 - (double)terminalTransparency;
 + (void)setTerminalTransparency:(double)value;
++ (NSTimeInterval)terminalTransparencySampleInterval;
+- (NSTimeInterval)terminalTransparencySampleInterval;
++ (void)setTerminalTransparencySampleInterval:(NSTimeInterval)seconds;
++ (BOOL)terminalTransparencySampleOnMoveOnly;
+- (BOOL)terminalTransparencySampleOnMoveOnly;
++ (void)setTerminalTransparencySampleOnMoveOnly:(BOOL)enabled;
 + (void)resetTerminalPreferences;
 @end

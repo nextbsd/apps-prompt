@@ -11,6 +11,11 @@ ifneq ($(shell pkg-config --exists x11 && echo yes),)
 Prompt_OBJCFLAGS += -DTERMINAL_X11_RESIZE $(shell pkg-config --cflags x11)
 Prompt_GUI_LIBS += $(shell pkg-config --libs x11)
 endif
+# Composite retains obscured window pixels for background sampling.
+ifneq ($(shell pkg-config --exists xcomposite xrender && echo yes),)
+Prompt_OBJCFLAGS += -DTERMINAL_X11_COMPOSITE $(shell pkg-config --cflags xcomposite xrender)
+Prompt_GUI_LIBS += $(shell pkg-config --libs xcomposite xrender)
+endif
 Prompt_APPLICATION_ICON = Terminal.png
 Prompt_RESOURCE_FILES = Resources/Terminal.png Resources/Help.txt COPYING COPYING.engine
 include $(GNUSTEP_MAKEFILES)/application.make

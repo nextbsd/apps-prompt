@@ -93,3 +93,8 @@ window movement alignment on both axes, tint blending, opaque ANSI backgrounds,
 and safe fallback for stale pixmaps. They also check the default setting, input
 validation, and profile copying. Run these with `xvfb-run -a make check` to isolate
 the temporary wallpaper property from your desktop.
+
+Background sampling regression checks create overlapping X11 windows and verify
+that only windows below the terminal are included, that obscured repaints and
+window movement refresh the sample, and that destroyed windows disappear. These
+checks require XComposite and XRender support in the build and X server.

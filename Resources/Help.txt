@@ -134,15 +134,22 @@ On Linux, the directory follows the shell's working directory; background and
 stopped jobs are also detected for confirmation. Other POSIX systems detect
 foreground jobs, but process names and live directory tracking require /proc.
 
-Wallpaper transparency
-----------------------
-In Preferences, move Wallpaper transparency right to reveal the desktop wallpaper
-through the default terminal background. Move it fully left to disable the effect
-(the default). The Background color supplies the tint. This setting is saved per
-profile; text, selections, cursor, and explicit ANSI background colors stay opaque.
-The wallpaper is aligned with the desktop as the window moves. No compositor is
-needed, and other windows behind Prompt are not shown.
-Requires the GNUstep X11 backend and a desktop that publishes a wallpaper pixmap
-through _XROOTPMAP_ID or ESETROOT_PMAP_ID. Otherwise Prompt keeps the solid background.
-Published wallpaper replacements are detected while the terminal session runs.
-Backdrops repainted in place without publishing a new pixmap are not detected.
+Background transparency
+-----------------------
+In Preferences, check Enable transparency and move Background transparency right
+to reveal the desktop and windows below the terminal. Uncheck Enable transparency
+to stop all background sampling without losing the slider amount. New profiles
+default to off; existing profiles with transparency retain their setting.
+The Background color supplies the tint. This setting is saved per profile; text,
+selections, cursor, and explicit ANSI background colors stay opaque.
+The Sample interval slider sets the time between background samples from 1 to 10
+seconds (default 5), saved per profile. The cached background follows window
+movement and captures changes to windows behind Prompt at this interval.
+Windows above Prompt are excluded.
+Select Sample only when window moves to capture the background initially and
+refresh it only after moving the terminal. This disables timed sampling and
+preserves the interval setting. The option is saved per profile.
+Requires the GNUstep X11 backend with XComposite and XRender support to sample
+windows. No desktop compositor is needed. Without these extensions, Prompt uses
+the published _XROOTPMAP_ID or ESETROOT_PMAP_ID wallpaper, or a solid background
+when no wallpaper is available.

@@ -11,6 +11,11 @@ ifneq ($(shell pkg-config --exists x11 && echo yes),)
 TerminalTests_OBJCFLAGS += -DTERMINAL_X11_RESIZE $(shell pkg-config --cflags x11)
 TerminalTests_TOOL_LIBS += $(shell pkg-config --libs x11)
 endif
+# Composite retains obscured window pixels for background sampling.
+ifneq ($(shell pkg-config --exists xcomposite xrender && echo yes),)
+TerminalTests_OBJCFLAGS += -DTERMINAL_X11_COMPOSITE $(shell pkg-config --cflags xcomposite xrender)
+TerminalTests_TOOL_LIBS += $(shell pkg-config --libs xcomposite xrender)
+endif
 TerminalTests_TOOL_LIBS += -lgnustep-gui
 include $(GNUSTEP_MAKEFILES)/tool.make
 check:: all

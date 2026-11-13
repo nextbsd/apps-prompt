@@ -5,12 +5,19 @@ New windows default to 80 columns by 25 rows, with the history scroller on the l
 Preferences supports named profiles for fonts, colors, cursor behavior, history,
 bell, initial window dimensions, and automatic window closing on shell exit. Save copies, rename or delete profiles,
 choose the default for new windows, and apply profiles to individual sessions.
-Profiles also offer a Wallpaper transparency slider (off by default). On X11,
-Prompt blends the desktop's published root wallpaper with the background color,
-keeping text, selections, and explicit ANSI backgrounds opaque. The wallpaper
-stays aligned as the window moves; no compositor is required. Desktops that do
-not publish `_XROOTPMAP_ID` or `ESETROOT_PMAP_ID` use the solid background instead.
-This shows wallpaper only, not other windows behind the terminal.
+Profiles offer an Enable transparency switch (off by default) and a Background
+transparency slider. Turning the switch off stops background sampling entirely
+and preserves the slider amount. On X11,
+Prompt samples the wallpaper and windows below the terminal and blends the result
+with the background color. Text, selections, and explicit ANSI backgrounds remain
+opaque. The cached sample follows window movement. The Sample interval slider
+sets the time between background samples from 1 to 10 seconds (default 5), saved
+per profile. Select Sample only when window moves to capture initially and then
+refresh only after moving the terminal, with no timed sampling.
+Window sampling requires the XComposite and XRender development libraries at build
+time and server extensions at runtime; no desktop compositor is required. Without
+these extensions, Prompt uses the published X11 wallpaper. If neither source is
+available, the background stays solid.
 Existing settings are preserved in the built-in Default profile.
 Closing a session or quitting warns about active jobs. Profiles can disable
 this confirmation or the running-process name shown beside the directory in
