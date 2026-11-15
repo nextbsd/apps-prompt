@@ -1378,7 +1378,23 @@ test_wallpaper (void)
   [window setReleasedWhenClosed:NO];
   TerminalView *view = [[TerminalView alloc] initWithFrame:NSMakeRect (0, 0, 320, 180)];
   [window setContentView:view];
+  [TerminalPreferences setTerminalTransparencySampleOnMoveOnly:YES];
+  [window display];
+  NSNumber *openingSample = [view valueForKey:@"lastWallpaperUpdate"];
   [window makeKeyAndOrderFront:nil];
+  [[NSNotificationCenter defaultCenter]
+      postNotificationName:NSWindowDidExposeNotification object:window];
+  [window display];
+  test_assert ([[view valueForKey:@"lastWallpaperUpdate"] doubleValue]
+               > [openingSample doubleValue],
+               @"First exposure refreshes the opening capture in move-only mode");
+  openingSample = [view valueForKey:@"lastWallpaperUpdate"];
+  [[NSNotificationCenter defaultCenter]
+      postNotificationName:NSWindowDidExposeNotification object:window];
+  [window display];
+  test_assert ([[view valueForKey:@"lastWallpaperUpdate"] isEqual:openingSample],
+               @"Later exposures preserve move-only sampling");
+  [TerminalPreferences setTerminalTransparencySampleOnMoveOnly:NO];
   if ([GSServerForWindow (window) respondsToSelector:@selector (xDisplayRootWindow)])
     {
       Display *display = XOpenDisplay (NULL);

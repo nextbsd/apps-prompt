@@ -316,6 +316,13 @@ static NSUInteger cleanup_count;
 - (void)viewWillMoveToWindow:(NSWindow *)window
 {
   NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+  if ([self window])
+    [center removeObserver:self name:NSWindowDidExposeNotification object:[self window]];
+  _wallpaperWindowExposed = NO;
+  _lastWallpaperUpdate = 0;
+  if (window)
+    [center addObserver:self selector:@selector (wallpaperWindowExposed:)
+                   name:NSWindowDidExposeNotification object:window];
   {
     NSEnumerator *enumerator =
         [[NSArray arrayWithObjects:NSWindowWillCloseNotification,
@@ -1310,6 +1317,18 @@ static NSUInteger cleanup_count;
 - (void)wallpaperWindowMoved:(NSNotification *)notification
 {
   if ([notification object] == [self window] && _transparency > 0)
+    [self setNeedsDisplay:YES];
+}
+
+- (void)wallpaperWindowExposed:(NSNotification *)notification
+{
+  if (_wallpaperWindowExposed) return;
+  _wallpaperWindowExposed = YES;
+  /* The first draw can precede X11 mapping and window-manager placement.
+   * Discard that capture once the window is actually on screen, even when
+   * sampling is restricted to movement. Later exposes retain the policy. */
+  _lastWallpaperUpdate = 0;
+  if (_transparency > 0)
     [self setNeedsDisplay:YES];
 }
 

@@ -37,6 +37,7 @@
   double _transparency;
   NSTimeInterval _lastWallpaperUpdate, _transparencySampleInterval;
   BOOL _transparencySampleOnMoveOnly;
+  BOOL _wallpaperWindowExposed;
   NSPoint _wallpaperPosition;
   NSFont *_font;
   NSFont *_boldFont;

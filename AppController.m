@@ -50,6 +50,7 @@ label (NSView *view, NSString *text, CGFloat y)
   [field setStringValue:text];
   [field setEditable:NO];
   [field setSelectable:NO];
+  [field setBezeled:NO];
   [field setBordered:NO];
   [field setDrawsBackground:NO];
   [view addSubview:field];
