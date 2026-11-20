@@ -30,6 +30,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
+#ifndef SIGWINCH
+#define SIGWINCH 28
+#endif
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
