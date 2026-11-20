@@ -23,6 +23,7 @@
 */
 
 #import "TerminalPreferences.h"
+#import <GNUstepGUI/GSTheme.h>
 #include <math.h>
 NSString *TerminalPreferencesDidChangeNotification
     = @"TerminalPreferencesDidChange";
@@ -298,20 +299,24 @@ NSString *TerminalPreferencesDidChangeNotification
   return fallback;
 }
 
+/* When no profile color is saved, the active theme's terminal colors apply. */
+static NSColor *themeTerminalColor(NSString *name)
+{
+  return [[[GSTheme theme] colors] colorWithKey:name];
+}
+
 - (NSColor *)terminalForegroundColor
 {
-  return
-      [self terminalColorForKey:@"foreground"
-                   defaultColor:[NSColor colorWithCalibratedWhite:230.0 / 255.0
-                                                            alpha:1]];
+  NSColor *fallback = themeTerminalColor(@"terminalBlueColor")
+      ?: [NSColor colorWithCalibratedWhite:230.0 / 255.0 alpha:1];
+  return [self terminalColorForKey:@"foreground" defaultColor:fallback];
 }
 
 - (NSColor *)terminalBackgroundColor
 {
-  return
-      [self terminalColorForKey:@"background"
-                   defaultColor:[NSColor colorWithCalibratedWhite:24.0 / 255.0
-                                                            alpha:1]];
+  NSColor *fallback = themeTerminalColor(@"terminalBackgroundColor")
+      ?: [NSColor colorWithCalibratedWhite:24.0 / 255.0 alpha:1];
+  return [self terminalColorForKey:@"background" defaultColor:fallback];
 }
 
 + (void)setTerminalForegroundColor:(NSColor *)foreground
