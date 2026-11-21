@@ -18,6 +18,7 @@
 #import "TerminalView.h"
 #import "TerminalPreferences.h"
 #import "TerminalWallpaper.h"
+#import <GNUstepGUI/GSTheme.h>
 #ifdef TERMINAL_X11_RESIZE
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -1317,6 +1318,25 @@ static NSUInteger cleanup_count;
                                    alpha:1];
 }
 
+/* Text in ANSI blue or black takes the theme's terminal colors, as in
+   Terminal.app: dark blue is hard to read on the dark background. */
+- (NSColor *)foregroundColor:(TerminalColor)color
+{
+  if (color.kind == TerminalColorIndexed && color.index < 16)
+    {
+      TerminalColor rgb = [_terminal resolvedColor:color];
+      if (rgb.rgb.red == 0 && rgb.rgb.green == 0)
+        {
+          NSColor *themed = [[[GSTheme theme] colors]
+              colorWithKey:rgb.rgb.blue ? @"terminalBlueColor"
+                                        : @"terminalBlackColor"];
+          if (themed)
+            return themed;
+        }
+    }
+  return [self color:color];
+}
+
 - (void)wallpaperWindowMoved:(NSNotification *)notification
 {
   if ([notification object] == [self window] && _transparency > 0)
@@ -1420,7 +1440,8 @@ static NSUInteger cleanup_count;
             if (!NSIntersectsRect (paintRect, dirty)
                 || ![self needsToDrawRect:paintRect])
               continue;
-            NSColor *fg = [self color:cell.fg], *bg = [self color:cell.bg];
+            NSColor *fg = [self foregroundColor:cell.fg],
+                    *bg = [self color:cell.bg];
             if ((cell.attributes & TerminalReverse))
               {
                 NSColor *swap = fg;
