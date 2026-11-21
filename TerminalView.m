@@ -19,6 +19,10 @@
 #import "TerminalPreferences.h"
 #import "TerminalWallpaper.h"
 #import <GNUstepGUI/GSTheme.h>
+/* libs-gui's current display server (GSDisplayServer.h is X11-only
+   here). */
+@class GSDisplayServer;
+APPKIT_EXPORT GSDisplayServer *GSCurrentServer (void);
 #ifdef TERMINAL_X11_RESIZE
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -66,6 +70,7 @@
 - (void)resizeTerminal;
 - (void)updateResizeIndicator;
 - (void)updateWindowSizeHints;
+- (void)updateWindowOpacity;
 
 - (void)updateScroller;
 
@@ -259,15 +264,20 @@ static NSUInteger cleanup_count;
   ASSIGN (_cursorColor, [preferences terminalCursorColor]);
   _transparency = [preferences terminalTransparencyEnabled]
       ? [preferences terminalTransparency] : 0;
+  /* Only X11 needs the desktop sampled behind the window; elsewhere the
+     window is drawn see-through and the server blends it. */
+  _windowTransparency = _transparency > 0
+      && ![GSCurrentServer () isKindOfClass:NSClassFromString (@"XGServer")];
   _transparencySampleInterval = [preferences terminalTransparencySampleInterval];
   _transparencySampleOnMoveOnly = [preferences terminalTransparencySampleOnMoveOnly];
-  if (_transparency > 0 && !_wallpaper)
+  if (_transparency > 0 && !_windowTransparency && !_wallpaper)
     {
       _wallpaper = [[TerminalWallpaper alloc] init];
       _lastWallpaperUpdate = 0;
     }
-  if (_transparency == 0)
+  if (_transparency == 0 || _windowTransparency)
     DESTROY (_wallpaper);
+  [self updateWindowOpacity];
   _preferredCursorShape = [preferences terminalCursorShape];
   _scrollbackLimit = [preferences terminalScrollbackLines];
   if ([_history count] > _scrollbackLimit)
@@ -292,7 +302,18 @@ static NSUInteger cleanup_count;
 
 - (BOOL)isOpaque
 {
-  return YES;
+  return !_windowTransparency;
+}
+
+- (void)updateWindowOpacity
+{
+  NSWindow *window = [self window];
+  if (window && [window contentView] == self)
+    {
+      [window setOpaque:!_windowTransparency];
+      if (_windowTransparency)
+        [window setBackgroundColor:[NSColor clearColor]];
+    }
 }
 
 - (BOOL)acceptsFirstResponder
@@ -691,6 +712,7 @@ static NSUInteger cleanup_count;
 {
   [super viewDidMoveToWindow];
   [self updateWindowSizeHints];
+  [self updateWindowOpacity];
 }
 
 - (void)updateWindowSizeHints
@@ -1404,9 +1426,20 @@ static NSUInteger cleanup_count;
 
 - (void)drawRect:(NSRect)dirty
 {
-  [_backgroundColor set];
-  NSRectFill (dirty);
-  BOOL wallpaperDrawn = [self drawWallpaper:dirty];
+  BOOL wallpaperDrawn;
+  if (_windowTransparency)
+    {
+      /* Replace, not blend: the pixels take the background's alpha. */
+      [[_backgroundColor colorWithAlphaComponent:1.0 - _transparency] set];
+      NSRectFillUsingOperation (dirty, NSCompositeCopy);
+      wallpaperDrawn = YES;
+    }
+  else
+    {
+      [_backgroundColor set];
+      NSRectFill (dirty);
+      wallpaperDrawn = [self drawWallpaper:dirty];
+    }
   NSInteger history = _alternateScreen ? 0 : [_history count];
   NSInteger first = history - _scrollOffset;
   NSInteger low = MIN (_selectionStart, _selectionEnd),

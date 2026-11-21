@@ -35,6 +35,9 @@
   NSString *_profileName;
   TerminalWallpaper *_wallpaper;
   double _transparency;
+  /* A display server that composites windows (NextBSD's WindowServer):
+     the window itself is see-through, with no X11 background sampled. */
+  BOOL _windowTransparency;
   NSTimeInterval _lastWallpaperUpdate, _transparencySampleInterval;
   BOOL _transparencySampleOnMoveOnly;
   BOOL _wallpaperWindowExposed;

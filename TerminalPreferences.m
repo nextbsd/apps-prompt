@@ -24,6 +24,10 @@
 
 #import "TerminalPreferences.h"
 #import <GNUstepGUI/GSTheme.h>
+/* libs-gui's current display server (GSDisplayServer.h is X11-only
+   here). */
+@class GSDisplayServer;
+APPKIT_EXPORT GSDisplayServer *GSCurrentServer (void);
 #include <math.h>
 NSString *TerminalPreferencesDidChangeNotification
     = @"TerminalPreferencesDidChange";
@@ -517,9 +521,14 @@ static NSColor *themeTerminalColor(NSString *name)
 - (BOOL)terminalTransparencyEnabled
 {
   id value = [[self terminalSettings] objectForKey:@"transparencyEnabled"];
-  /* Preserve the effect for profiles saved before the explicit switch existed. */
-  return [value isKindOfClass:[NSNumber class]] ? [value boolValue]
-                                               : [self terminalTransparency] > 0;
+  /* Preserve the effect for profiles saved before the explicit switch
+     existed. Unset, it's on where the window server blends windows; X11
+     would have to sample the desktop, so it stays off there. */
+  if ([value isKindOfClass:[NSNumber class]])
+    return [value boolValue];
+  if ([[self terminalSettings] objectForKey:@"transparency"] == nil)
+    return ![GSCurrentServer () isKindOfClass:NSClassFromString (@"XGServer")];
+  return [self terminalTransparency] > 0;
 }
 
 + (BOOL)terminalTransparencyEnabled
@@ -533,11 +542,12 @@ static NSColor *themeTerminalColor(NSString *name)
   [self setTerminalValue:[NSNumber numberWithBool:enabled] forKey:@"transparencyEnabled"];
 }
 
+/* Unset: a little see-through, as macOS's dark Terminal windows can be. */
 - (double)terminalTransparency
 {
   id value = [[self terminalSettings] objectForKey:@"transparency"];
-  double amount = [value isKindOfClass:[NSNumber class]] ? [value doubleValue] : 0;
-  return isfinite (amount) && amount >= 0 && amount <= 1 ? amount : 0;
+  double amount = [value isKindOfClass:[NSNumber class]] ? [value doubleValue] : 0.15;
+  return isfinite (amount) && amount >= 0 && amount <= 1 ? amount : 0.15;
 }
 
 + (double)terminalTransparency
