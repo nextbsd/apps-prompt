@@ -305,11 +305,11 @@ static NSColor *themeTerminalColor(NSString *name)
   return [[[GSTheme theme] colors] colorWithKey:name];
 }
 
+/* Text is white, as in Terminal.app; the theme's blue is for ANSI blue. */
 - (NSColor *)terminalForegroundColor
 {
-  NSColor *fallback = themeTerminalColor(@"terminalBlueColor")
-      ?: [NSColor colorWithCalibratedWhite:230.0 / 255.0 alpha:1];
-  return [self terminalColorForKey:@"foreground" defaultColor:fallback];
+  return [self terminalColorForKey:@"foreground"
+                      defaultColor:[NSColor whiteColor]];
 }
 
 - (NSColor *)terminalBackgroundColor
@@ -350,7 +350,7 @@ static NSColor *themeTerminalColor(NSString *name)
 - (NSColor *)terminalCursorColor
 {
   return [self terminalColorForKey:@"cursorColor"
-                      defaultColor:[NSColor redColor]];
+                      defaultColor:[NSColor whiteColor]];
 }
 
 + (void)setTerminalCursorColor:(NSColor *)color
@@ -370,13 +370,14 @@ static NSColor *themeTerminalColor(NSString *name)
                 forKey:@"cursorColor"];
 }
 
+/* Without a saved shape, an underline, like Terminal.app's line cursor. */
 - (NSInteger)terminalCursorShape
 {
   id value = [[self terminalSettings] objectForKey:@"cursorShape"];
   return [value isKindOfClass:[NSNumber class]] && [value integerValue] >= 0 &&
                  [value integerValue] <= 4
              ? [value integerValue]
-             : 0;
+             : 4;
 }
 
 + (void)setTerminalCursorShape:(NSInteger)shape
