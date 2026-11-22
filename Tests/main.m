@@ -267,7 +267,7 @@ test_terminal (NSString *temporaryDirectory)
       = RETAIN ([defaults objectForKey:@"TerminalSettings"]);
   [TerminalPreferences resetTerminalPreferences];
 
-  /* Verify the application-owned parser's Prompt integration independently. */
+  /* Verify the application-owned parser's Terminal integration independently. */
   TerminalTestView *engineView = [[TerminalTestView alloc]
       initWithFrame:NSMakeRect (0, 0, 500, 240)];
   TerminalParser_VT100 *engine = [engineView valueForKey:@"_terminal"];
@@ -702,7 +702,7 @@ test_terminal (NSString *temporaryDirectory)
       terminal_wait (view, @"DIRECTORY_READY");
       [[NSRunLoop currentRunLoop]
           runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.6]];
-      test_assert ([[preview title] hasPrefix:@"Prompt — /tmp — "],
+      test_assert ([[preview title] hasPrefix:@"Terminal — /tmp — "],
                    @"Title follows the shell working directory");
       [view sendData:[[NSString stringWithFormat:@"cd '%@'\r", directory]
                          dataUsingEncoding:NSUTF8StringEncoding]];

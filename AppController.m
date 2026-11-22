@@ -1,5 +1,5 @@
 /*
- * Standalone GNUstep Prompt. GPL-2.0-or-later; see COPYING.
+ * Standalone GNUstep Terminal. GPL-2.0-or-later; see COPYING.
  * Font-panel responder integration follows Ycode AppController:
  * Copyright (C) 2025 Free Software Foundation; author Gregory Casamento.
  */
@@ -81,8 +81,8 @@ label (NSView *view, NSString *text, CGFloat y)
 
 - (void)buildMenus
 {
-  NSMenu *main = AUTORELEASE ([[NSMenu alloc] initWithTitle:@"Prompt"]);
-  add_item (main, @"About Prompt", @selector (orderFrontStandardAboutPanel:),
+  NSMenu *main = AUTORELEASE ([[NSMenu alloc] initWithTitle:@"Terminal"]);
+  add_item (main, @"About Terminal", @selector (orderFrontStandardAboutPanel:),
             @"", NSApp);
   add_item (main, @"Preferences…", @selector (showPreferences:), @",", self);
   NSMenu *session = AUTORELEASE ([[NSMenu alloc] initWithTitle:@"Session"]);
@@ -106,12 +106,12 @@ label (NSView *view, NSString *text, CGFloat y)
   [main setSubmenu:window forItem:[main itemWithTitle:@"Window"]];
   add_item (window, @"Minimize", @selector (performMiniaturize:), @"m", nil);
   [NSApp setWindowsMenu:window];
-  add_item (main, @"Prompt Help", @selector (showHelp:), @"?", self);
-  add_item (main, @"Hide Prompt", @selector (hide:), @"h", NSApp);
+  add_item (main, @"Terminal Help", @selector (showHelp:), @"?", self);
+  add_item (main, @"Hide Terminal", @selector (hide:), @"h", NSApp);
   add_item (main, @"Quit", @selector (terminate:), @"q", NSApp);
   [NSApp setMainMenu:main];
   /* GNUstep uses the process name for the menu window when installing it. */
-  [[main window] setTitle:@"Prompt"];
+  [[main window] setTitle:@"Terminal"];
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification
@@ -144,7 +144,7 @@ label (NSView *view, NSString *text, CGFloat y)
                     defer:NO];
   [window setReleasedWhenClosed:NO];
   [window setMinSize:NSMakeSize (240, 140)];
-  [window setTitle:[NSString stringWithFormat:@"Prompt — %@", directory]];
+  [window setTitle:[NSString stringWithFormat:@"Terminal — %@", directory]];
   TerminalView *terminal =
       [[TerminalView alloc] initWithFrame:[[window contentView] bounds]];
   [terminal setProfileName:profile];
@@ -232,7 +232,7 @@ label (NSView *view, NSString *text, CGFloat y)
   NSWindow *window;
   while ((window = [enumerator nextObject]))
     if ([(TerminalView *)[window contentView] requiresCloseConfirmation])
-      return NSRunAlertPanel (@"Quit Prompt?",
+      return NSRunAlertPanel (@"Quit Terminal?",
                               @"Processes are still running in a terminal. "
                                @"Quitting will terminate all sessions.",
                               @"Cancel", @"Quit", nil) == NSAlertAlternateReturn
@@ -318,7 +318,7 @@ label (NSView *view, NSString *text, CGFloat y)
                     styleMask:NSTitledWindowMask | NSClosableWindowMask
                       backing:NSBackingStoreBuffered
                         defer:NO];
-      [_preferences setTitle:@"Prompt Preferences"];
+      [_preferences setTitle:@"Terminal Preferences"];
       [_preferences setReleasedWhenClosed:NO];
       NSView *view = [_preferences contentView];
       label (view, @"Fixed-pitch font (6–72 pt)", 345);
@@ -725,7 +725,7 @@ label (NSView *view, NSString *text, CGFloat y)
                               | NSResizableWindowMask
                       backing:NSBackingStoreBuffered
                         defer:NO];
-      [_help setTitle:@"Prompt Help"];
+      [_help setTitle:@"Terminal Help"];
       [_help setReleasedWhenClosed:NO];
       NSScrollView *scroll = AUTORELEASE (
           [[NSScrollView alloc] initWithFrame:[[_help contentView] bounds]]);
@@ -745,7 +745,7 @@ label (NSView *view, NSString *text, CGFloat y)
                                                  encoding:NSUTF8StringEncoding
                                                     error:NULL];
       [text setString:help ? help
-                           : @"Prompt Help could not be loaded from the "
+                           : @"Terminal Help could not be loaded from the "
                              @"application bundle."];
       [scroll setDocumentView:text];
       [_help setContentView:scroll];

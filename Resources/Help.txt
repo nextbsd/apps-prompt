@@ -1,11 +1,11 @@
-GNUstep Prompt
-===============
+Terminal
+========
 
 Getting started
 ---------------
 New Terminal (Command-N) opens an interactive shell in your home directory.
 New Terminal in Directory (Command-O) lets you choose its working directory.
-You can also launch Prompt.app/Prompt --directory /absolute/path.
+You can also launch Terminal.app/Terminal --directory /absolute/path.
 The shell is chosen from executable $SHELL, then your account shell, then
 /bin/sh. It runs interactively with a controlling POSIX pseudo-terminal.
 Use shell commands such as cd to change directory within a session.
@@ -23,13 +23,13 @@ also terminated and orphaned descendants are reaped by the app. Programs that de
 session are outside the terminal's lifecycle.
 Open Terminal / Close Terminal (Command-T) toggles the most recently active
 terminal window and preserves its shell; the menu title follows visibility.
-Close Session (Command-W) ends the session instead. Minimize and Hide Prompt
+Close Session (Command-W) ends the session instead. Minimize and Hide Terminal
 also preserve sessions and continue processing output.
 By default, after shell exit, existing output stays visible. Return starts a new shell.
 Enable “Close terminal session when process exits” in Preferences to close that session
 automatically instead. This also applies to a program replacing the shell with
 exec; finishing an ordinary command within a running shell does not close it.
-Other sessions and the Prompt application remain open.
+Other sessions and the Terminal application remain open.
 Restart Shell (also in the context menu) ends the current shell and clears
 its screen/history before starting again in the original working directory.
 
@@ -125,7 +125,7 @@ library is bundled. Source provenance is in Terminal/README.txt.
 
 Session safety and titles
 -------------------------
-Closing a session or quitting Prompt asks for confirmation when jobs remain.
+Closing a session or quitting Terminal asks for confirmation when jobs remain.
 An idle shell does not trigger the warning. Hiding a terminal keeps it running.
 “Confirm closing sessions with running jobs” controls this warning per profile.
 “Show running process in window title” adds the foreground command (or the idle
@@ -144,12 +144,12 @@ The Background color supplies the tint. This setting is saved per profile; text,
 selections, cursor, and explicit ANSI background colors stay opaque.
 The Sample interval slider sets the time between background samples from 1 to 10
 seconds (default 5), saved per profile. The cached background follows window
-movement and captures changes to windows behind Prompt at this interval.
-Windows above Prompt are excluded.
+movement and captures changes to windows behind Terminal at this interval.
+Windows above Terminal are excluded.
 Select Sample only when window moves to capture the background initially and
 refresh it only after moving the terminal. This disables timed sampling and
 preserves the interval setting. The option is saved per profile.
 Requires the GNUstep X11 backend with XComposite and XRender support to sample
-windows. No desktop compositor is needed. Without these extensions, Prompt uses
+windows. No desktop compositor is needed. Without these extensions, Terminal uses
 the published _XROOTPMAP_ID or ESETROOT_PMAP_ID wallpaper, or a solid background
 when no wallpaper is available.

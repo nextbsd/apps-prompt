@@ -1,4 +1,6 @@
-# GNUstep Prompt
+# Terminal
+
+NextBSD's Terminal.app. It was called Prompt (nextbsd/apps-prompt) until 2026-11-22; GNUstep's GAP Terminal that NextBSD carried before is archived as nextbsd/apps-terminal-gap.
 
 Independent, manual-reference-counted AppKit VT100/VT220 terminal emulator using the application-owned Objective-C engine from GNUstep Terminal and asynchronous, nonblocking POSIX PTY I/O. No Ycode libraries required.
 New windows default to 80 columns by 25 rows, with the history scroller on the left.
@@ -8,7 +10,7 @@ choose the default for new windows, and apply profiles to individual sessions.
 Profiles offer an Enable transparency switch (off by default) and a Background
 transparency slider. Turning the switch off stops background sampling entirely
 and preserves the slider amount. On X11,
-Prompt samples the wallpaper and windows below the terminal and blends the result
+Terminal samples the wallpaper and windows below the terminal and blends the result
 with the background color. Text, selections, and explicit ANSI backgrounds remain
 opaque. The cached sample follows window movement. The Sample interval slider
 sets the time between background samples from 1 to 10 seconds (default 5), saved
@@ -16,7 +18,7 @@ per profile. Select Sample only when window moves to capture initially and then
 refresh only after moving the terminal, with no timed sampling.
 Window sampling requires the XComposite and XRender development libraries at build
 time and server extensions at runtime; no desktop compositor is required. Without
-these extensions, Prompt uses the published X11 wallpaper. If neither source is
+these extensions, Terminal uses the published X11 wallpaper. If neither source is
 available, the background stays solid.
 Existing settings are preserved in the built-in Default profile.
 Closing a session or quitting warns about active jobs. Profiles can disable
@@ -30,15 +32,15 @@ Build with the configured GNUstep development environment:
 
 ```sh
 make
-./Prompt.app/Prompt
-./Prompt.app/Prompt --directory /tmp
+./Terminal.app/Terminal
+./Terminal.app/Terminal --directory /tmp
 make check
 ```
 
 Dependencies: GNUstep Make, Base and GUI, an Objective-C compiler, a GUI backend,
 and POSIX UNIX 98 PTYs. The engine is included; no network downloads are needed.
 `make install` uses the standard GNUstep application target (optional).
-Prompt retains the existing preferences domain so saved settings carry over.
+Terminal retains the existing preferences domain so saved settings carry over.
 Preferences use the separate `io.github.gcasa.apps-terminal` domain. GAP
 Terminal's `org.gap.Terminal` domain and legacy `Terminal` settings are left
 untouched; existing settings from those domains are not imported.
@@ -57,4 +59,4 @@ with inspiration from libvterm. See [COPYING](COPYING) and [COPYING.engine](COPY
 
 <img width="739" height="957" alt="prompt_test" src="https://github.com/user-attachments/assets/a829e762-1b43-4bf3-86b3-bd5f5d91b5c2" />
 
-The Prompt application supports ANSI and VT100/VT220 terminal emulation through its application-owned engine.
+The Terminal application supports ANSI and VT100/VT220 terminal emulation through its application-owned engine.

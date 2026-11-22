@@ -62,7 +62,7 @@ The suite covers:
   profiles, applying profiles without restarting shells, rename/delete behavior,
   invalid names, per-profile reset, and persistence across processes.
 
-A separate smoke run launched `Prompt.app/Prompt --directory /tmp` on an
+A separate smoke run launched `Terminal.app/Terminal --directory /tmp` on an
 isolated display, typed a real shell command, opened Help and Preferences using
 keyboard menu shortcuts, captured and visually inspected both windows, and
 quit through the menu shortcut with exit status 0. Help loaded the bundled

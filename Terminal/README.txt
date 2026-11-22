@@ -6,9 +6,9 @@ or later (see COPYING.engine). Its copyright and license notices are preserved i
 The emulation engine was inspired by libvterm, by Paul Evans and contributors.
 No libvterm source, headers, library, or runtime dependency is included.
 
-Prompt uses native TerminalGlyph cells and a TerminalScreen delegate for
-scrollback, output, invalidation, and cursor state. Prompt-specific integration
+Terminal uses native TerminalGlyph cells and a TerminalScreen delegate for
+scrollback, output, invalidation, and cursor state. Terminal-specific integration
 adds mouse and focus reporting, cursor style selection, and double underline,
-and uses Prompt's existing keyboard modifier and bell preferences.
+and uses Terminal's existing keyboard modifier and bell preferences.
 
 The engine builds with the application; no downloads or generators are needed.

@@ -1170,8 +1170,8 @@ static NSUInteger cleanup_count;
 #endif
   NSString *process = _showProcess ? [self runningProcessName] : nil;
   NSString *title = [process length]
-      ? [NSString stringWithFormat:@"Prompt — %@ — %@", _directory, process]
-      : [NSString stringWithFormat:@"Prompt — %@", _directory];
+      ? [NSString stringWithFormat:@"Terminal — %@ — %@", _directory, process]
+      : [NSString stringWithFormat:@"Terminal — %@", _directory];
   if (![[[self window] title] isEqual:title])
     [[self window] setTitle:title];
 }
