@@ -1,9 +1,9 @@
 {
-  ApplicationName = "Prompt";
+  ApplicationName = "Terminal";
   ApplicationDescription = "A native VT100/VT220 terminal emulator for GNUstep with an application-owned emulation engine";
   ApplicationRelease = "1.0";
   NSAppVersion = "1.0";
-  CFBundleName = "Prompt";
+  CFBundleName = "Terminal";
   CFBundleIdentifier = "io.github.gcasa.apps-terminal";
   CFBundleShortVersionString = "1.0";
   CFBundleVersion = "1.0";
@@ -15,5 +15,5 @@
   URL = "https://github.com/gcasa/apps-prompt";
   Copyright = "Copyright (C) 2025-2026 Free Software Foundation";
   NSHumanReadableCopyright = "Copyright (C) 2025-2026 Free Software Foundation";
-  CopyrightDescription = "Free software under the GNU GPL, version 2 or later.\nDistributed WITHOUT ANY WARRANTY.\nApplication-owned terminal engine inspired by libvterm.\nEngine adapted from GNUstep Terminal under GPL version 3 or later.\nSee COPYING and COPYING.engine in the app bundle.\nChoose Prompt Help for usage and compatibility details.";
+  CopyrightDescription = "Free software under the GNU GPL, version 2 or later.\nDistributed WITHOUT ANY WARRANTY.\nApplication-owned terminal engine inspired by libvterm.\nEngine adapted from GNUstep Terminal under GPL version 3 or later.\nSee COPYING and COPYING.engine in the app bundle.\nChoose Terminal Help for usage and compatibility details.";
 }
