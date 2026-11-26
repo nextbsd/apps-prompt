@@ -16,6 +16,7 @@
 #define _XOPEN_SOURCE 600
 #endif
 #import "TerminalView.h"
+#import <AppKit/NSInterfaceStyle.h>
 #import "TerminalPreferences.h"
 #import "TerminalWallpaper.h"
 #import <GNUstepGUI/GSTheme.h>
@@ -50,6 +51,8 @@ APPKIT_EXPORT GSDisplayServer *GSCurrentServer (void);
 #endif
 
 @interface TerminalView (Private)
+- (CGFloat)gridX;
+- (void)placeScroller;
 
 - (void)copyToPasteboard:(NSPasteboard *)pasteboard;
 - (void)pasteFromPasteboard:(NSPasteboard *)pasteboard;
@@ -159,12 +162,17 @@ static NSUInteger cleanup_count;
       CGFloat scrollerWidth = [NSScroller scrollerWidth];
       _historyScroller = [[NSScroller alloc]
           initWithFrame:NSMakeRect (0, 0, scrollerWidth, frame.size.height)];
-      [_historyScroller
-          setAutoresizingMask:NSViewMaxXMargin | NSViewHeightSizable];
       [_historyScroller setTarget:self];
       [_historyScroller setAction:@selector (scrollHistory:)];
       [self addSubview:_historyScroller];
       RELEASE (_historyScroller);
+      [self placeScroller];
+      /* Workspace's Scroller style moves the scroller at once. */
+      [[NSDistributedNotificationCenter defaultCenter]
+          addObserver:self
+             selector:@selector (desktopSettingsChanged:)
+                 name:@"org.nextbsd.DesktopSettingsChanged"
+               object:nil];
       _rows = MAX (2, (int)(frame.size.height / _cellHeight));
       _columns = MAX (
           2, (int)(MAX (0, frame.size.width - scrollerWidth) / _cellWidth));
@@ -187,6 +195,7 @@ static NSUInteger cleanup_count;
 - (void)dealloc
 {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
+  [[NSDistributedNotificationCenter defaultCenter] removeObserver:self];
   [self stop];
   if (_terminal)
     RELEASE (_terminal);
@@ -403,7 +412,7 @@ static NSUInteger cleanup_count;
   /* Include neighbouring cells so either half of a wide glyph is repainted. */
   int start = MAX (0, rect.start_col - 1),
       end = MIN (_columns, rect.end_col + 1);
-  NSRect damage = NSMakeRect ([NSScroller scrollerWidth] + start * _cellWidth,
+  NSRect damage = NSMakeRect ([self gridX] + start * _cellWidth,
                               rect.start_row * _cellHeight,
                               (end - start) * _cellWidth,
                               (rect.end_row - rect.start_row) * _cellHeight);
@@ -450,7 +459,7 @@ static NSUInteger cleanup_count;
         TerminalGlyph cell;
         if ([self cellAtRow:first + row column:col cell:&cell]
             && (cell.attributes & TerminalBlink))
-          [self setNeedsDisplayInRect:NSMakeRect ([NSScroller scrollerWidth]
+          [self setNeedsDisplayInRect:NSMakeRect ([self gridX]
                                                       + col * _cellWidth,
                                                   row * _cellHeight,
                                                   MAX (1, cell.width)
@@ -609,6 +618,45 @@ static NSUInteger cleanup_count;
 - (void)sendData:(NSData *)data
 {
   [self queueBytes:[data bytes] length:[data length]];
+}
+
+/*
+ * The scroller's side follows GNUstep's NSScrollViewInterfaceStyle, as an
+ * NSScrollView's does: the left (NeXTSTEP), or the right with the Mac or
+ * Windows style (Workspace Preferences' Scroller style writes it). The
+ * grid starts beside it.
+ */
+static BOOL
+TerminalScrollerOnLeft (void)
+{
+  NSInterfaceStyle style = NSInterfaceStyleForKey (@"NSScrollViewInterfaceStyle", nil);
+  return style != NSMacintoshInterfaceStyle && style != NSWindows95InterfaceStyle;
+}
+
+- (CGFloat)gridX
+{
+  return TerminalScrollerOnLeft () ? [NSScroller scrollerWidth] : 0;
+}
+
+- (void)placeScroller
+{
+  CGFloat width = [NSScroller scrollerWidth];
+  NSRect bounds = [self bounds];
+  BOOL left = TerminalScrollerOnLeft ();
+  [_historyScroller setFrame:NSMakeRect (left ? 0 : NSWidth (bounds) - width, 0, width,
+                                         NSHeight (bounds))];
+  [_historyScroller setAutoresizingMask:(left ? NSViewMaxXMargin : NSViewMinXMargin)
+                                        | NSViewHeightSizable];
+}
+
+- (void)desktopSettingsChanged:(NSNotification *)notification
+{
+  if (![[[notification userInfo] objectForKey:@"key"] isEqual:@"NBScrollerStyle"])
+    return;
+  /* Re-reading the defaults empties GNUstep's interface style cache. */
+  [[NSUserDefaults standardUserDefaults] synchronize];
+  [self placeScroller];
+  [self setNeedsDisplay:YES];
 }
 
 - (void)setFrame:(NSRect)frame
@@ -1451,10 +1499,10 @@ static NSUInteger cleanup_count;
   int firstRow = MAX (0, (int)floor (NSMinY (dirty) / _cellHeight));
   int lastRow = MIN (_rows, (int)ceil (NSMaxY (dirty) / _cellHeight));
   int firstCol = MAX (
-      0, (int)floor ((NSMinX (dirty) - [NSScroller scrollerWidth]) / _cellWidth)
+      0, (int)floor ((NSMinX (dirty) - [self gridX]) / _cellWidth)
              - 1);
   int lastCol
-      = MIN (_columns, (int)ceil ((NSMaxX (dirty) - [NSScroller scrollerWidth])
+      = MIN (_columns, (int)ceil ((NSMaxX (dirty) - [self gridX])
                                   / _cellWidth));
   for (pass = 0; pass < 2; pass++)
     for (row = firstRow; row < lastRow; row++)
@@ -1462,7 +1510,7 @@ static NSUInteger cleanup_count;
         for (col = firstCol; col < lastCol; col++)
           {
             NSRect rect
-                = NSMakeRect ([NSScroller scrollerWidth] + col * _cellWidth,
+                = NSMakeRect ([self gridX] + col * _cellWidth,
                               row * _cellHeight, _cellWidth, _cellHeight);
             TerminalGlyph cell;
             if (![self cellAtRow:first + row column:col cell:&cell])
@@ -1552,7 +1600,7 @@ static NSUInteger cleanup_count;
                     ? 4
                     : (_cursorShape == TerminalCursorBar ? 3 : 1);
       NSRect rect
-          = NSMakeRect ([NSScroller scrollerWidth] + cursor.col * _cellWidth,
+          = NSMakeRect ([self gridX] + cursor.col * _cellWidth,
                         cursor.row * _cellHeight, _cellWidth, _cellHeight);
       if (shape == 4)
         NSRectFill (
@@ -1672,7 +1720,7 @@ static NSUInteger cleanup_count;
   int row = MIN (_rows - 1, MAX (0, (int)(p.y / _cellHeight)));
   int col
       = MIN (_columns - 1,
-             MAX (0, (int)((p.x - [NSScroller scrollerWidth]) / _cellWidth)));
+             MAX (0, (int)((p.x - [self gridX]) / _cellWidth)));
   return (history - _scrollOffset + row) * _columns + col;
 }
 
@@ -1683,7 +1731,7 @@ static NSUInteger cleanup_count;
   NSPoint p = [self convertPoint:[event locationInWindow] fromView:nil];
   [_terminal mouseRow:MIN (_rows - 1, MAX (0, (int)(p.y / _cellHeight)))
                column:MIN (_columns - 1, MAX (0, (int)((p.x -
-                           [NSScroller scrollerWidth]) / _cellWidth)))
+                           [self gridX]) / _cellWidth)))
                button:button pressed:pressed modifiers:[event modifierFlags]];
   return YES;
 }
