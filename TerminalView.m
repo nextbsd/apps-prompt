@@ -58,6 +58,11 @@ APPKIT_EXPORT GSDisplayServer *GSCurrentServer (void);
 - (void)pasteFromPasteboard:(NSPasteboard *)pasteboard;
 - (NSPasteboard *)selectionPasteboard;
 - (void)poll:(NSTimer *)timer;
+- (void)tick:(NSTimer *)timer;
+- (void)watchMaster:(BOOL)watch;
+- (void)watchMasterWrites:(BOOL)watch;
+- (BOOL)writePendingInput;
+- (void)sessionEnded;
 - (void)updateSessionTitle;
 
 - (void)queueBytes:(const char *)bytes length:(size_t)length;
@@ -114,6 +119,21 @@ terminal_cell_string (const TerminalGlyph *cell)
 
 static NSCondition *cleanup_condition;
 static NSUInteger cleanup_count;
+
+/* The PTY is serviced while menus track and modal panels run, too. */
+static NSArray *
+terminal_run_loop_modes (void)
+{
+  static NSArray *modes = nil;
+  if (!modes)
+    modes = [[NSArray alloc] initWithObjects:NSDefaultRunLoopMode,
+                                             NSEventTrackingRunLoopMode,
+                                             NSModalPanelRunLoopMode, nil];
+  return modes;
+}
+
+/* Blink, title and child checks; output wakes the view by itself. */
+#define TERMINAL_TICK 0.5
 
 @implementation TerminalView
 + (void)initialize
@@ -611,8 +631,13 @@ static NSUInteger cleanup_count;
 
 - (void)queueBytes:(const char *)bytes length:(size_t)length
 {
-  if (_master >= 0)
-    [_pendingInput appendBytes:bytes length:length];
+  if (_master < 0)
+    return;
+  [_pendingInput appendBytes:bytes length:length];
+  /* Send keystrokes at once; whatever the PTY can't take yet waits for the
+   * run loop to report room. */
+  [self writePendingInput];
+  [self watchMasterWrites:[_pendingInput length] > 0];
 }
 
 - (void)sendData:(NSData *)data
@@ -995,14 +1020,20 @@ TerminalScrollerOnLeft (void)
   [_pendingInput setLength:0];
   [_terminal reset:YES];
   [_terminal flush];
-  _timer = RETAIN ([NSTimer timerWithTimeInterval:0.02
+  _childExited = NO;
+  /* Output and EOF arrive through the run loop watching the PTY; the timer
+   * only blinks, updates the title and notices a shell that exited while a
+   * background job keeps the PTY open. */
+  _timer = RETAIN ([NSTimer timerWithTimeInterval:TERMINAL_TICK
                                            target:self
-                                         selector:@selector (poll:)
+                                         selector:@selector (tick:)
                                          userInfo:nil
                                           repeats:YES]);
-  [[NSRunLoop mainRunLoop] addTimer:_timer forMode:NSDefaultRunLoopMode];
-  [[NSRunLoop mainRunLoop] addTimer:_timer forMode:NSEventTrackingRunLoopMode];
-  [[NSRunLoop mainRunLoop] addTimer:_timer forMode:NSModalPanelRunLoopMode];
+  NSEnumerator *modes = [terminal_run_loop_modes () objectEnumerator];
+  NSString *mode;
+  while ((mode = [modes nextObject]) != nil)
+    [[NSRunLoop mainRunLoop] addTimer:_timer forMode:mode];
+  [self watchMaster:YES];
   return YES;
 }
 
@@ -1120,10 +1151,12 @@ TerminalScrollerOnLeft (void)
                                           [NSNumber numberWithInt:foreground],
                                           nil]];
     }
+  [self watchMaster:NO];
   if (_master >= 0)
     close (_master);
 #endif
   _session = _child = _master = -1;
+  _childExited = NO;
   [self updateSessionTitle];
   [_pendingInput setLength:0];
   _pendingInputOffset = 0;
@@ -1224,28 +1257,175 @@ TerminalScrollerOnLeft (void)
     [[self window] setTitle:title];
 }
 
-- (void)poll:(NSTimer *)timer
+#ifndef _WIN32
+- (void)watchMaster:(BOOL)watch
 {
-  NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
-  if (_transparency > 0 && !_transparencySampleOnMoveOnly
+  if (watch == _watchingMaster || (watch && _master < 0))
+    return;
+  if (!watch)
+    [self watchMasterWrites:NO];
+  NSRunLoop *loop = [NSRunLoop mainRunLoop];
+  NSEnumerator *modes = [terminal_run_loop_modes () objectEnumerator];
+  NSString *mode;
+  while ((mode = [modes nextObject]) != nil)
+    {
+      if (watch)
+        [loop addEvent:(void *)(intptr_t)_master
+                  type:ET_RDESC
+               watcher:self
+               forMode:mode];
+      else
+        [loop removeEvent:(void *)(intptr_t)_master
+                     type:ET_RDESC
+                  forMode:mode
+                      all:YES];
+    }
+  _watchingMaster = watch;
+}
+
+- (void)watchMasterWrites:(BOOL)watch
+{
+  if (watch == _watchingMasterWrites || (watch && !_watchingMaster))
+    return;
+  NSRunLoop *loop = [NSRunLoop mainRunLoop];
+  NSEnumerator *modes = [terminal_run_loop_modes () objectEnumerator];
+  NSString *mode;
+  while ((mode = [modes nextObject]) != nil)
+    {
+      if (watch)
+        [loop addEvent:(void *)(intptr_t)_master
+                  type:ET_WDESC
+               watcher:self
+               forMode:mode];
+      else
+        [loop removeEvent:(void *)(intptr_t)_master
+                     type:ET_WDESC
+                  forMode:mode
+                      all:YES];
+    }
+  _watchingMasterWrites = watch;
+}
+
+- (void)receivedEvent:(void *)data
+                 type:(RunLoopEventType)type
+                extra:(void *)extra
+              forMode:(NSString *)mode
+{
+  if ((int)(intptr_t)data == _master)
+    [self poll:nil];
+}
+
+/* NO when the PTY can no longer take input. */
+- (BOOL)writePendingInput
+{
+  if (_master < 0 || ![_pendingInput length])
+    return YES;
+  ssize_t count
+      = write (_master,
+               (const char *)[_pendingInput bytes] + _pendingInputOffset,
+               MIN (65536, [_pendingInput length] - _pendingInputOffset));
+  if (count > 0)
+    {
+      _pendingInputOffset += count;
+      if (_pendingInputOffset == [_pendingInput length])
+        {
+          [_pendingInput setLength:0];
+          _pendingInputOffset = 0;
+        }
+      else if (_pendingInputOffset >= [_pendingInput length] / 2)
+        {
+          /* Compact geometrically, not after every partial PTY write:
+           * large pastes otherwise repeatedly copy the entire tail. */
+          [_pendingInput replaceBytesInRange:
+                             NSMakeRange (0, _pendingInputOffset)
+                                  withBytes:NULL length:0];
+          _pendingInputOffset = 0;
+        }
+    }
+  else if (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK
+           && errno != EINTR)
+    return NO;
+  return YES;
+}
+#else
+- (void)watchMaster:(BOOL)watch
+{
+}
+
+- (void)watchMasterWrites:(BOOL)watch
+{
+}
+
+- (BOOL)writePendingInput
+{
+  return YES;
+}
+#endif
+
+- (void)sessionEnded
+{
+  AUTORELEASE (RETAIN (self));
+  [self stop];
+  _ended = YES;
+  if (_closeOnExit)
+    {
+      [[self window] close];
+      return;
+    }
+  [self consumeData:
+            [@"\r\n[Shell exited. Press Return to start a new shell.]\r\n"
+                dataUsingEncoding:NSUTF8StringEncoding]];
+}
+
+- (void)tick:(NSTimer *)timer
+{
+  /* Timers fire a little late or early; don't let that skip a beat. */
+  NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate],
+                 due = TERMINAL_TICK * 0.9;
+  /* Only X11 samples the desktop behind the window. A window the server
+   * blends (_windowTransparency) needs no redraw to stay see-through. */
+  if (_wallpaper && !_windowTransparency && !_transparencySampleOnMoveOnly
       && now - _lastWallpaperUpdate >= _transparencySampleInterval)
     {
       [self setNeedsDisplay:YES];
     }
-  if (now - _lastSessionUpdate >= 0.5)
+  if (now - _lastSessionUpdate >= due)
     {
       _lastSessionUpdate = now;
       [self updateSessionTitle];
     }
-  if (now - _lastBlink >= 0.5)
+  if (now - _lastBlink >= due)
     {
       _lastBlink = now;
       [self advanceBlink];
     }
 #ifndef _WIN32
+  /* The PTY reaches EOF when the shell exits, unless a background job still
+   * holds it open: then the reaped shell ends the session once its output
+   * stops. */
+  int status;
+  if (_child > 0)
+    {
+      pid_t result = waitpid (_child, &status, WNOHANG);
+      if (result == _child || (result < 0 && errno == ECHILD))
+        {
+          _child = -1;
+          _childExited = YES;
+        }
+    }
+  if (_childExited)
+    [self poll:nil];
+#endif
+}
+
+/* Read the shell's output and write pending input; the run loop calls this
+ * whenever the PTY is readable, or writable while input is waiting. */
+- (void)poll:(NSTimer *)timer
+{
+#ifndef _WIN32
   /* A byte cap alone permits expensive output to monopolize the main loop.
-   * Check elapsed time between small batches, while still servicing input on
-   * every tick even when the child continuously produces output. */
+   * Check elapsed time between small batches; output still waiting leaves
+   * the PTY readable, so the run loop comes back after serving events. */
   NSTimeInterval deadline = [NSDate timeIntervalSinceReferenceDate] + 0.004;
   char buffer[4096];
   ssize_t count;
@@ -1270,60 +1450,18 @@ TerminalScrollerOnLeft (void)
           break;
         }
     }
-  if (!finished && [_pendingInput length])
-    {
-      count = write (_master,
-                     (const char *)[_pendingInput bytes] + _pendingInputOffset,
-                     MIN (65536, [_pendingInput length] - _pendingInputOffset));
-      if (count > 0)
-        {
-          _pendingInputOffset += count;
-          if (_pendingInputOffset == [_pendingInput length])
-            {
-              [_pendingInput setLength:0];
-              _pendingInputOffset = 0;
-            }
-          else if (_pendingInputOffset >= [_pendingInput length] / 2)
-            {
-              /* Compact geometrically, not after every partial PTY write:
-               * large pastes otherwise repeatedly copy the entire tail. */
-              [_pendingInput replaceBytesInRange:
-                                 NSMakeRange (0, _pendingInputOffset)
-                                      withBytes:NULL length:0];
-              _pendingInputOffset = 0;
-            }
-        }
-      else if (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK
-               && errno != EINTR)
-        finished = YES;
-    }
-  int status;
-  if (_child > 0)
-    {
-      pid_t result = waitpid (_child, &status, WNOHANG);
-      if (result == _child || (result < 0 && errno == ECHILD))
-        {
-          _child = -1;
-          /* Keep draining output until EOF, including output larger than one
-           * poll budget. */
-          if (total == 0)
-            finished = YES;
-        }
-    }
+  if (!finished && ![self writePendingInput])
+    finished = YES;
+  /* Keep draining output after the shell is reaped, including output larger
+   * than one read budget. */
+  if (_childExited && total == 0)
+    finished = YES;
   if (finished)
     {
-      AUTORELEASE (RETAIN (self));
-      [self stop];
-      _ended = YES;
-      if (_closeOnExit)
-        {
-          [[self window] close];
-          return;
-        }
-      [self consumeData:
-                [@"\r\n[Shell exited. Press Return to start a new shell.]\r\n"
-                    dataUsingEncoding:NSUTF8StringEncoding]];
+      [self sessionEnded];
+      return;
     }
+  [self watchMasterWrites:[_pendingInput length] > 0];
 #endif
 }
 
