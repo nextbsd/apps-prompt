@@ -193,6 +193,115 @@ test_output_responsiveness (void)
   RELEASE (view);
 }
 
+/* Count PTY service passes and repaints to show an idle session sleeps. */
+@interface TerminalIdleTestView : TerminalView
+{
+  NSUInteger _polls, _repaints;
+}
+
+- (NSUInteger)polls;
+- (NSUInteger)repaints;
+
+@end
+
+@implementation TerminalIdleTestView
+
+- (void)poll:(NSTimer *)timer
+{
+  _polls++;
+  [super poll:timer];
+}
+
+- (void)drawRect:(NSRect)dirty
+{
+  _repaints++;
+  [super drawRect:dirty];
+}
+
+- (NSUInteger)polls
+{
+  return _polls;
+}
+
+- (NSUInteger)repaints
+{
+  return _repaints;
+}
+
+@end
+
+static BOOL terminal_wait (TerminalView *view, NSString *text);
+static void pump (double seconds);
+
+/* A shell setting up its line editor can discard typed-ahead input, so wait
+ * for its prompt before typing. */
+static void
+terminal_wait_for_prompt (TerminalView *view)
+{
+  NSCharacterSet *blank = [NSCharacterSet whitespaceAndNewlineCharacterSet];
+  NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:8];
+  while ([deadline timeIntervalSinceNow] > 0
+         && ![[[view screenText] stringByTrimmingCharactersInSet:blank] length])
+    pump (0.02);
+  pump (0.3);
+}
+
+static void
+test_event_driven_pty (NSString *directory)
+{
+  NSWindow *window = [[NSWindow alloc]
+      initWithContentRect:NSMakeRect (100, 100, 640, 400)
+                styleMask:NSTitledWindowMask
+                  backing:NSBackingStoreBuffered
+                    defer:NO];
+  TerminalIdleTestView *view = [[TerminalIdleTestView alloc]
+      initWithFrame:NSMakeRect (0, 0, 640, 400)];
+  [window setContentView:view];
+  [window orderFront:nil];
+  NSError *error = nil;
+  test_assert ([view startInDirectory:directory error:&error],
+               @"Start a shell for the event-driven PTY checks");
+  /* The run loop alone delivers output: nothing here calls -poll:. */
+  terminal_wait_for_prompt (view);
+  [view sendData:[@"printf 'event%sdriven\\n' -\n"
+                     dataUsingEncoding:NSUTF8StringEncoding]];
+  BOOL woke = terminal_wait (view, @"event-driven");
+  if (!woke)
+    NSLog (@"Screen without the expected output:\n%@", [view screenText]);
+  test_assert (woke, @"The run loop wakes the view for shell output");
+  pump (0.3);
+  NSUInteger polls = [view polls], repaints = [view repaints];
+  pump (2.0);
+  NSLog (@"Idle PTY over 2 s: %lu service passes, %lu repaints",
+         (unsigned long)([view polls] - polls),
+         (unsigned long)([view repaints] - repaints));
+  /* The old 50 Hz poll timer made 100 passes; the blink and title timer
+   * repaints at most the cursor, twice a second. */
+  test_assert ([view polls] - polls <= 2,
+               @"An idle session doesn't poll its PTY");
+  test_assert ([view repaints] - repaints <= 6,
+               @"An idle session doesn't redraw its window");
+  NSTimeInterval start = [NSDate timeIntervalSinceReferenceDate];
+  [view sendData:[@"exit\n" dataUsingEncoding:NSUTF8StringEncoding]];
+  BOOL exited = terminal_wait (view, @"Shell exited.");
+  NSTimeInterval elapsed = [NSDate timeIntervalSinceReferenceDate] - start;
+  NSLog (@"Shell exit noticed after %.3f seconds", elapsed);
+  test_assert (exited && ![view isRunning] && elapsed < 0.4,
+               @"EOF on the PTY ends the session without waiting for the timer");
+  [view restart:nil];
+  terminal_wait_for_prompt (view);
+  [view sendData:[@"echo a$((1+1))b\n" dataUsingEncoding:NSUTF8StringEncoding]];
+  BOOL restarted = [view isRunning] && terminal_wait (view, @"a2b");
+  if (!restarted)
+    NSLog (@"Screen after restarting (running %d):\n%@",
+           (int)[view isRunning], [view screenText]);
+  test_assert (restarted, @"Restart Shell starts a new event-driven session");
+  [view stop];
+  [window orderOut:nil];
+  RELEASE (view);
+  RELEASE (window);
+}
+
 static void
 test_partial_input_writes (void)
 {
@@ -1995,6 +2104,7 @@ main (int argc, const char **argv)
   [TerminalPreferences resetTerminalPreferences];
   test_partial_input_writes ();
   test_output_responsiveness ();
+  test_event_driven_pty (directory);
   test_wallpaper ();
   test_sampled_background ();
   test_active_cursor ();

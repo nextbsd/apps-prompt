@@ -20,8 +20,9 @@
 @class TerminalWallpaper;
 
 /** An independent interactive terminal. Screen and nonblocking PTY I/O use the
- * main run loop. */
-@interface TerminalView : NSView <TerminalScreen>
+ * main run loop: the PTY is watched as a run-loop event source, so an idle
+ * terminal sleeps until its shell writes. */
+@interface TerminalView : NSView <TerminalScreen, RunLoopEvents>
 {
   TerminalParser_VT100 *_terminal;
   TerminalPosition _cursorPosition;
@@ -55,6 +56,11 @@
   void *_resizeDisplay;
   BOOL _showResizeIndicator;
   int _master;
+  /* The run loop watches _master for output, and for room while input waits. */
+  BOOL _watchingMaster, _watchingMasterWrites;
+  /* The shell was reaped before its PTY reached EOF (a background job still
+     holds the terminal open). */
+  BOOL _childExited;
   int _child;
   int _session;
   int _rows, _columns;
